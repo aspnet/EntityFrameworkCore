@@ -6,6 +6,7 @@ using System.Diagnostics;
 using JetBrains.Annotations;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
+using Microsoft.EntityFrameworkCore.Metadata.Builders.Internal;
 using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.EntityFrameworkCore.Utilities;
 
@@ -104,7 +105,7 @@ namespace Microsoft.EntityFrameworkCore.Metadata.Internal
         /// </summary>
         public virtual string StoreType
         {
-            get => _storeType;
+            get => _storeType ?? TypeMapping?.StoreType;
             set => SetStoreType(value, ConfigurationSource.Explicit);
         }
 
@@ -188,6 +189,9 @@ namespace Microsoft.EntityFrameworkCore.Metadata.Internal
         [DebuggerStepThrough]
         RelationalTypeMapping IConventionDbFunctionParameter.SetTypeMapping(RelationalTypeMapping typeMapping, bool fromDataAnnotation)
             => SetTypeMapping(typeMapping, fromDataAnnotation ? ConfigurationSource.DataAnnotation : ConfigurationSource.Convention);
+
+        /// <inheritdoc />
+        public virtual IStoreFunctionParameter StoreFunctionParameter { get; [param: NotNull] set; }
 
         /// <summary>
         ///     This is an internal API that supports the Entity Framework Core infrastructure and not subject to

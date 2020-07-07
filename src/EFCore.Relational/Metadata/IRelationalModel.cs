@@ -2,11 +2,8 @@
 // Licensed under the Apache License, Version 2.0. See License.txt in the project root for license information.
 
 using System.Collections.Generic;
-using System.Reflection;
 using JetBrains.Annotations;
 using Microsoft.EntityFrameworkCore.Infrastructure;
-using Microsoft.EntityFrameworkCore.Metadata.Internal;
-using Microsoft.EntityFrameworkCore.Utilities;
 
 namespace Microsoft.EntityFrameworkCore.Metadata
 {
@@ -39,7 +36,7 @@ namespace Microsoft.EntityFrameworkCore.Metadata
         /// <summary>
         ///     Returns all user-defined functions contained in the model.
         /// </summary>
-        IEnumerable<IDbFunction> DbFunctions => Model.GetDbFunctions();
+        IEnumerable<IStoreFunction> Functions { get; }
 
         /// <summary>
         ///     Returns the database collation.
@@ -47,19 +44,19 @@ namespace Microsoft.EntityFrameworkCore.Metadata
         string Collation => Model.GetCollation();
 
         /// <summary>
-        ///     Gets the table with a given name. Returns <c>null</c> if no table with the given name is defined.
+        ///     Gets the table with the given name. Returns <see langword="null" /> if no table with the given name is defined.
         /// </summary>
         /// <param name="name"> The name of the table. </param>
         /// <param name="schema"> The schema of the table. </param>
-        /// <returns> The table with a given name or <c>null</c> if no table with the given name is defined. </returns>
+        /// <returns> The table with a given name or <see langword="null" /> if no table with the given name is defined. </returns>
         ITable FindTable([NotNull] string name, [CanBeNull] string schema);
 
         /// <summary>
-        ///     Gets the view with a given name. Returns <c>null</c> if no view with the given name is defined.
+        ///     Gets the view with the given name. Returns <see langword="null" /> if no view with the given name is defined.
         /// </summary>
         /// <param name="name"> The name of the view. </param>
         /// <param name="schema"> The schema of the view. </param>
-        /// <returns> The view with a given name or <c>null</c> if no view with the given name is defined. </returns>
+        /// <returns> The view with a given name or <see langword="null" /> if no view with the given name is defined. </returns>
         IView FindView([NotNull] string name, [CanBeNull] string schema);
 
         /// <summary>
@@ -68,26 +65,19 @@ namespace Microsoft.EntityFrameworkCore.Metadata
         /// <param name="name"> The sequence name. </param>
         /// <param name="schema"> The schema that contains the sequence. </param>
         /// <returns>
-        ///     The <see cref="ISequence" /> or <c>null</c> if no sequence with the given name in
+        ///     The <see cref="ISequence" /> or <see langword="null" /> if no sequence with the given name in
         ///     the given schema was found.
         /// </returns>
         ISequence FindSequence([NotNull] string name, [CanBeNull] string schema)
             => Model.FindSequence(name, schema);
 
         /// <summary>
-        ///     Finds a <see cref="IDbFunction" /> that is mapped to the method represented by the given <see cref="MethodInfo" />.
+        ///     Finds a <see cref="IStoreFunction" /> with the given signature.
         /// </summary>
-        /// <param name="method"> The <see cref="MethodInfo" /> for the method that is mapped to the function. </param>
-        /// <returns> The <see cref="IDbFunction" /> or <c>null</c> if the method is not mapped. </returns>
-        IDbFunction FindDbFunction([NotNull] MethodInfo method)
-            => DbFunction.FindDbFunction(Model, Check.NotNull(method, nameof(method)));
-
-        /// <summary>
-        ///     Finds a <see cref="IDbFunction" /> that is mapped to the method represented by the given name.
-        /// </summary>
-        /// <param name="name"> The model name of the function. </param>
-        /// <returns> The <see cref="IDbFunction" /> or <c>null</c> if the method is not mapped. </returns>
-        IDbFunction FindDbFunction([NotNull] string name)
-            => DbFunction.FindDbFunction(Model, Check.NotNull(name, nameof(name)));
+        /// <param name="name"> The name of the function. </param>
+        /// <param name="schema"> The schema of the function. </param>
+        /// <param name="parameters"> A list of parameter types. </param>
+        /// <returns> The <see cref="IStoreFunction" /> or <see langword="null" /> if no function with the given name was defined. </returns>
+        IStoreFunction FindFunction([NotNull] string name, [CanBeNull] string schema, [NotNull] IReadOnlyList<string> parameters);
     }
 }

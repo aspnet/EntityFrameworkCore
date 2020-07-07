@@ -5,9 +5,16 @@ using JetBrains.Annotations;
 
 namespace Microsoft.EntityFrameworkCore.Metadata.Builders
 {
-#pragma warning disable CS1591 // Missing XML comment for publicly visible type or member
+    /// <summary>
+    ///     <para>
+    ///         Provides a simple API surface for configuring an <see cref="IConventionNavigation" /> from conventions.
+    ///     </para>
+    ///     <para>
+    ///         This interface is typically used by database providers (and other extensions). It is generally
+    ///         not used in application code.
+    ///     </para>
+    /// </summary>
     public interface IConventionNavigationBuilder : IConventionAnnotatableBuilder
-#pragma warning restore CS1591 // Missing XML comment for publicly visible type or member
     {
         /// <summary>
         ///     Gets the navigation being configured.
@@ -20,7 +27,7 @@ namespace Microsoft.EntityFrameworkCore.Metadata.Builders
         /// </summary>
         /// <param name="fieldName"> The field name. </param>
         /// <param name="fromDataAnnotation"> Indicates whether the configuration was specified using a data annotation. </param>
-        /// <returns> <c>true</c> if the backing field can be set for this property. </returns>
+        /// <returns> <see langword="true" /> if the backing field can be set for this property. </returns>
         bool CanSetField([CanBeNull] string fieldName, bool fromDataAnnotation = false);
 
         /// <summary>
@@ -30,7 +37,7 @@ namespace Microsoft.EntityFrameworkCore.Metadata.Builders
         /// <param name="fromDataAnnotation"> Indicates whether the configuration was specified using a data annotation. </param>
         /// <returns>
         ///     The same builder instance if the configuration was applied,
-        ///     <c>null</c> otherwise.
+        ///     <see langword="null" /> otherwise.
         /// </returns>
         IConventionNavigationBuilder HasField([CanBeNull] string fieldName, bool fromDataAnnotation = false);
 
@@ -40,7 +47,7 @@ namespace Microsoft.EntityFrameworkCore.Metadata.Builders
         /// </summary>
         /// <param name="propertyAccessMode"> The <see cref="PropertyAccessMode" /> to use for this navigation. </param>
         /// <param name="fromDataAnnotation"> Indicates whether the configuration was specified using a data annotation. </param>
-        /// <returns> <c>true</c> if the <see cref="PropertyAccessMode" /> can be set for this navigation. </returns>
+        /// <returns> <see langword="true" /> if the <see cref="PropertyAccessMode" /> can be set for this navigation. </returns>
         bool CanSetPropertyAccessMode(PropertyAccessMode? propertyAccessMode, bool fromDataAnnotation = false);
 
         /// <summary>
@@ -50,8 +57,28 @@ namespace Microsoft.EntityFrameworkCore.Metadata.Builders
         /// <param name="fromDataAnnotation"> Indicates whether the configuration was specified using a data annotation. </param>
         /// <returns>
         ///     The same builder instance if the configuration was applied,
-        ///     <c>null</c> otherwise.
+        ///     <see langword="null" /> otherwise.
         /// </returns>
         IConventionNavigationBuilder UsePropertyAccessMode(PropertyAccessMode? propertyAccessMode, bool fromDataAnnotation = false);
+
+        /// <summary>
+        ///     Returns a value indicating whether this navigation can be configured to be eager loaded in a query
+        ///     from the current configuration source.
+        /// </summary>
+        /// <param name="eagerLoaded"> A value indicating whether the navigation should be eager loaded. </param>
+        /// <param name="fromDataAnnotation"> Indicates whether the configuration was specified using a data annotation. </param>
+        /// <returns> <see langword="true" /> if eager loaded can be set for this navigation. </returns>
+        bool CanSetIsEagerLoaded(bool? eagerLoaded, bool fromDataAnnotation = false);
+
+        /// <summary>
+        ///     Configures this navigation to be eager loaded in a query
+        /// </summary>
+        /// <param name="eagerLoaded"> A value indicating whether the navigation should be eager loaded. </param>
+        /// <param name="fromDataAnnotation"> Indicates whether the configuration was specified using a data annotation. </param>
+        /// <returns>
+        ///     The same builder instance if the configuration was applied,
+        ///     <see langword="null" /> otherwise.
+        /// </returns>
+        IConventionNavigationBuilder IsEagerLoaded(bool? eagerLoaded, bool fromDataAnnotation = false);
     }
 }

@@ -292,10 +292,10 @@ namespace Microsoft.EntityFrameworkCore
         }
 
         /// <summary>
-        ///     Configures a database function when targeting a relational database.
+        ///     Configures a relational database function.
         /// </summary>
         /// <param name="modelBuilder"> The model builder. </param>
-        /// <param name="methodInfo"> The methodInfo this dbFunction uses. </param>
+        /// <param name="methodInfo"> The method this function uses. </param>
         /// <param name="fromDataAnnotation"> Indicates whether the configuration was specified using a data annotation. </param>
         /// <returns> A builder to further configure the function. </returns>
         public static IConventionDbFunctionBuilder HasDbFunction(
@@ -310,6 +310,37 @@ namespace Microsoft.EntityFrameworkCore
             if (dbFunction == null)
             {
                 dbFunction = modelBuilder.Metadata.AddDbFunction(methodInfo, fromDataAnnotation);
+            }
+            else
+            {
+                ((DbFunction)dbFunction).UpdateConfigurationSource(
+                    fromDataAnnotation ? ConfigurationSource.DataAnnotation : ConfigurationSource.Convention);
+            }
+
+            return dbFunction.Builder;
+        }
+
+        /// <summary>
+        ///     Configures a relational database function.
+        /// </summary>
+        /// <param name="modelBuilder"> The model builder. </param>
+        /// <param name="name"> The name of the function. </param>
+        /// <param name="returnType"> The function's return type. </param>
+        /// <param name="fromDataAnnotation"> Indicates whether the configuration was specified using a data annotation. </param>
+        /// <returns> A builder to further configure the function. </returns>
+        public static IConventionDbFunctionBuilder HasDbFunction(
+            [NotNull] this IConventionModelBuilder modelBuilder,
+            [NotNull] string name,
+            [NotNull] Type returnType,
+            bool fromDataAnnotation = false)
+        {
+            Check.NotNull(modelBuilder, nameof(modelBuilder));
+            Check.NotEmpty(name, nameof(name));
+
+            var dbFunction = modelBuilder.Metadata.FindDbFunction(name);
+            if (dbFunction == null)
+            {
+                dbFunction = modelBuilder.Metadata.AddDbFunction(name, returnType, fromDataAnnotation);
             }
             else
             {
@@ -348,7 +379,7 @@ namespace Microsoft.EntityFrameworkCore
         /// <param name="fromDataAnnotation"> Indicates whether the configuration was specified using a data annotation. </param>
         /// <returns>
         ///     The same builder instance if the configuration was applied,
-        ///     <c>null</c> otherwise.
+        ///     <see langword="null" /> otherwise.
         /// </returns>
         public static IConventionModelBuilder HasDefaultSchema(
             [NotNull] this IConventionModelBuilder modelBuilder,
@@ -371,7 +402,7 @@ namespace Microsoft.EntityFrameworkCore
         /// <param name="modelBuilder"> The model builder. </param>
         /// <param name="schema"> The default schema. </param>
         /// <param name="fromDataAnnotation"> Indicates whether the configuration was specified using a data annotation. </param>
-        /// <returns> <c>true</c> if the given schema can be set as default. </returns>
+        /// <returns> <see langword="true" /> if the given schema can be set as default. </returns>
         public static bool CanSetDefaultSchema(
             [NotNull] this IConventionModelBuilder modelBuilder,
             [CanBeNull] string schema,
@@ -391,7 +422,7 @@ namespace Microsoft.EntityFrameworkCore
         /// <param name="fromDataAnnotation"> Indicates whether the configuration was specified using a data annotation. </param>
         /// <returns>
         ///     The same builder instance if the configuration was applied,
-        ///     <c>null</c> otherwise.
+        ///     <see langword="null" /> otherwise.
         /// </returns>
         public static IConventionModelBuilder HasMaxIdentifierLength(
             [NotNull] this IConventionModelBuilder modelBuilder,
@@ -414,7 +445,7 @@ namespace Microsoft.EntityFrameworkCore
         /// <param name="modelBuilder"> The model builder. </param>
         /// <param name="length"> The value to set. </param>
         /// <param name="fromDataAnnotation"> Indicates whether the configuration was specified using a data annotation. </param>
-        /// <returns> <c>true</c> if the maximum length allowed for store identifiers can be set. </returns>
+        /// <returns> <see langword="true" /> if the maximum length allowed for store identifiers can be set. </returns>
         public static bool CanSetMaxIdentifierLength(
             [NotNull] this IConventionModelBuilder modelBuilder,
             int? length,
@@ -451,7 +482,7 @@ namespace Microsoft.EntityFrameworkCore
         /// <param name="fromDataAnnotation"> Indicates whether the configuration was specified using a data annotation. </param>
         /// <returns>
         ///     The same builder instance if the configuration was applied,
-        ///     <c>null</c> otherwise.
+        ///     <see langword="null" /> otherwise.
         /// </returns>
         public static IConventionModelBuilder UseCollation(
             [NotNull] this IConventionModelBuilder modelBuilder,
@@ -474,7 +505,7 @@ namespace Microsoft.EntityFrameworkCore
         /// <param name="modelBuilder"> The model builder. </param>
         /// <param name="collation"> The collation. </param>
         /// <param name="fromDataAnnotation"> Indicates whether the configuration was specified using a data annotation. </param>
-        /// <returns> <c>true</c> if the given collation can be set as default. </returns>
+        /// <returns> <see langword="true" /> if the given collation can be set as default. </returns>
         public static bool CanSetCollation(
             [NotNull] this IConventionModelBuilder modelBuilder,
             [CanBeNull] string collation,

@@ -54,7 +54,7 @@ namespace Microsoft.EntityFrameworkCore
         /// <param name="fromDataAnnotation"> Indicates whether the configuration was specified using a data annotation. </param>
         /// <returns>
         ///     The same builder instance if the configuration was applied,
-        ///     <c>null</c> otherwise.
+        ///     <see langword="null" /> otherwise.
         /// </returns>
         public static IConventionPropertyBuilder HasColumnName(
             [NotNull] this IConventionPropertyBuilder propertyBuilder,
@@ -71,12 +71,38 @@ namespace Microsoft.EntityFrameworkCore
         }
 
         /// <summary>
+        ///     Configures the column that the property maps to in a particular table-like store object.
+        /// </summary>
+        /// <param name="propertyBuilder"> The builder for the property being configured. </param>
+        /// <param name="name"> The name of the column. </param>
+        /// <param name="storeObject"> The identifier of the store object. </param>
+        /// <param name="fromDataAnnotation"> Indicates whether the configuration was specified using a data annotation. </param>
+        /// <returns>
+        ///     The same builder instance if the configuration was applied,
+        ///     <see langword="null" /> otherwise.
+        /// </returns>
+        public static IConventionPropertyBuilder HasColumnName(
+            [NotNull] this IConventionPropertyBuilder propertyBuilder,
+            [CanBeNull] string name,
+            StoreObjectIdentifier storeObject,
+            bool fromDataAnnotation = false)
+        {
+            if (!propertyBuilder.CanSetColumnName(name, storeObject, fromDataAnnotation))
+            {
+                return null;
+            }
+
+            propertyBuilder.Metadata.SetColumnName(name, storeObject, fromDataAnnotation);
+            return propertyBuilder;
+        }
+
+        /// <summary>
         ///     Returns a value indicating whether the given column can be set for the property.
         /// </summary>
         /// <param name="propertyBuilder"> The builder for the property being configured. </param>
         /// <param name="name"> The name of the column. </param>
         /// <param name="fromDataAnnotation"> Indicates whether the configuration was specified using a data annotation. </param>
-        /// <returns> <c>true</c> if the property can be mapped to the given column. </returns>
+        /// <returns> <see langword="true" /> if the property can be mapped to the given column. </returns>
         public static bool CanSetColumnName(
             [NotNull] this IConventionPropertyBuilder propertyBuilder,
             [CanBeNull] string name,
@@ -84,71 +110,25 @@ namespace Microsoft.EntityFrameworkCore
             => propertyBuilder.CanSetAnnotation(RelationalAnnotationNames.ColumnName, name, fromDataAnnotation);
 
         /// <summary>
-        ///     Configures the column that the property maps to in a view in a relational database.
+        ///     Returns a value indicating whether the given column for a particular table-like store object can be set for the property.
         /// </summary>
         /// <param name="propertyBuilder"> The builder for the property being configured. </param>
         /// <param name="name"> The name of the column. </param>
-        /// <returns> The same builder instance so that multiple calls can be chained. </returns>
-        public static PropertyBuilder HasViewColumnName(
-            [NotNull] this PropertyBuilder propertyBuilder,
-            [CanBeNull] string name)
-        {
-            Check.NotNull(propertyBuilder, nameof(propertyBuilder));
-            Check.NullButNotEmpty(name, nameof(name));
-
-            propertyBuilder.Metadata.SetViewColumnName(name);
-
-            return propertyBuilder;
-        }
-
-        /// <summary>
-        ///     Configures the column that the property maps to in a view in a relational database.
-        /// </summary>
-        /// <typeparam name="TProperty"> The type of the property being configured. </typeparam>
-        /// <param name="propertyBuilder"> The builder for the property being configured. </param>
-        /// <param name="name"> The name of the column. </param>
-        /// <returns> The same builder instance so that multiple calls can be chained. </returns>
-        public static PropertyBuilder<TProperty> HasViewColumnName<TProperty>(
-            [NotNull] this PropertyBuilder<TProperty> propertyBuilder,
-            [CanBeNull] string name)
-            => (PropertyBuilder<TProperty>)HasViewColumnName((PropertyBuilder)propertyBuilder, name);
-
-        /// <summary>
-        ///     Configures the column that the property maps to in a view in a relational database.
-        /// </summary>
-        /// <param name="propertyBuilder"> The builder for the property being configured. </param>
-        /// <param name="name"> The name of the column. </param>
+        /// <param name="storeObject"> The identifier of the store object. </param>
         /// <param name="fromDataAnnotation"> Indicates whether the configuration was specified using a data annotation. </param>
-        /// <returns>
-        ///     The same builder instance if the configuration was applied,
-        ///     <c>null</c> otherwise.
-        /// </returns>
-        public static IConventionPropertyBuilder HasViewColumnName(
+        /// <returns> <see langword="true" /> if the property can be mapped to the given column. </returns>
+        public static bool CanSetColumnName(
             [NotNull] this IConventionPropertyBuilder propertyBuilder,
             [CanBeNull] string name,
+            StoreObjectIdentifier storeObject,
             bool fromDataAnnotation = false)
         {
-            if (!propertyBuilder.CanSetViewColumnName(name, fromDataAnnotation))
-            {
-                return null;
-            }
-
-            propertyBuilder.Metadata.SetViewColumnName(name, fromDataAnnotation);
-            return propertyBuilder;
+            var overrides = RelationalPropertyOverrides.Find(propertyBuilder.Metadata, storeObject);
+            return overrides == null
+                || (fromDataAnnotation ? ConfigurationSource.DataAnnotation : ConfigurationSource.Convention)
+                    .Overrides(overrides.GetColumnNameConfigurationSource())
+                               || overrides.ColumnName == name;
         }
-
-        /// <summary>
-        ///     Returns a value indicating whether the given view column can be set for the property.
-        /// </summary>
-        /// <param name="propertyBuilder"> The builder for the property being configured. </param>
-        /// <param name="name"> The name of the column. </param>
-        /// <param name="fromDataAnnotation"> Indicates whether the configuration was specified using a data annotation. </param>
-        /// <returns> <c>true</c> if the property can be mapped to the given column. </returns>
-        public static bool CanSetViewColumnName(
-            [NotNull] this IConventionPropertyBuilder propertyBuilder,
-            [CanBeNull] string name,
-            bool fromDataAnnotation = false)
-            => propertyBuilder.CanSetAnnotation(RelationalAnnotationNames.ViewColumnName, name, fromDataAnnotation);
 
         /// <summary>
         ///     Configures the data type of the column that the property maps to when targeting a relational database.
@@ -191,7 +171,7 @@ namespace Microsoft.EntityFrameworkCore
         /// <param name="fromDataAnnotation"> Indicates whether the configuration was specified using a data annotation. </param>
         /// <returns>
         ///     The same builder instance if the configuration was applied,
-        ///     <c>null</c> otherwise.
+        ///     <see langword="null" /> otherwise.
         /// </returns>
         public static IConventionPropertyBuilder HasColumnType(
             [NotNull] this IConventionPropertyBuilder propertyBuilder,
@@ -213,7 +193,7 @@ namespace Microsoft.EntityFrameworkCore
         /// <param name="propertyBuilder"> The builder for the property being configured. </param>
         /// <param name="typeName"> The name of the data type of the column. </param>
         /// <param name="fromDataAnnotation"> Indicates whether the configuration was specified using a data annotation. </param>
-        /// <returns> <c>true</c> if the given data type can be set for the property. </returns>
+        /// <returns> <see langword="true" /> if the given data type can be set for the property. </returns>
         public static bool CanSetColumnType(
             [NotNull] this IConventionPropertyBuilder propertyBuilder,
             [CanBeNull] string typeName,
@@ -257,7 +237,7 @@ namespace Microsoft.EntityFrameworkCore
         /// <param name="fromDataAnnotation"> Indicates whether the configuration was specified using a data annotation. </param>
         /// <returns>
         ///     The same builder instance if the configuration was applied,
-        ///     <c>null</c> otherwise.
+        ///     <see langword="null" /> otherwise.
         /// </returns>
         public static IConventionPropertyBuilder IsFixedLength(
             [NotNull] this IConventionPropertyBuilder propertyBuilder,
@@ -279,7 +259,7 @@ namespace Microsoft.EntityFrameworkCore
         /// <param name="propertyBuilder"> The builder for the property being configured. </param>
         /// <param name="fixedLength"> A value indicating whether the property is constrained to fixed length values. </param>
         /// <param name="fromDataAnnotation"> Indicates whether the configuration was specified using a data annotation. </param>
-        /// <returns> <c>true</c> if the property can be configured as being fixed length or not. </returns>
+        /// <returns> <see langword="true" /> if the property can be configured as being fixed length or not. </returns>
         public static bool CanSetIsFixedLength(
             [NotNull] this IConventionPropertyBuilder propertyBuilder,
             bool? fixedLength,
@@ -324,7 +304,7 @@ namespace Microsoft.EntityFrameworkCore
         /// <param name="fromDataAnnotation"> Indicates whether the configuration was specified using a data annotation. </param>
         /// <returns>
         ///     The same builder instance if the configuration was applied,
-        ///     <c>null</c> otherwise.
+        ///     <see langword="null" /> otherwise.
         /// </returns>
         public static IConventionPropertyBuilder HasDefaultValueSql(
             [NotNull] this IConventionPropertyBuilder propertyBuilder,
@@ -346,7 +326,7 @@ namespace Microsoft.EntityFrameworkCore
         /// <param name="propertyBuilder"> The builder for the property being configured. </param>
         /// <param name="sql"> The SQL expression for the default value of the column. </param>
         /// <param name="fromDataAnnotation"> Indicates whether the configuration was specified using a data annotation. </param>
-        /// <returns> <c>true</c> if the given default value expression can be set for the column. </returns>
+        /// <returns> <see langword="true" /> if the given default value expression can be set for the column. </returns>
         public static bool CanSetDefaultValueSql(
             [NotNull] this IConventionPropertyBuilder propertyBuilder,
             [CanBeNull] string sql,
@@ -362,9 +342,9 @@ namespace Microsoft.EntityFrameworkCore
         /// <param name="propertyBuilder"> The builder for the property being configured. </param>
         /// <param name="sql"> The SQL expression that computes values for the column. </param>
         /// <param name="stored">
-        ///     If <c>true</c>, the computed value is calculated on row modification and stored in the database like a regular column.
-        ///     If <c>false</c>, the value is computed when the value is read, and does not occupy any actual storage.
-        ///     <c>null</c> selects the database provider default.
+        ///     If <see langword="true" />, the computed value is calculated on row modification and stored in the database like a regular column.
+        ///     If <see langword="false" />, the value is computed when the value is read, and does not occupy any actual storage.
+        ///     <see langword="null" /> selects the database provider default.
         /// </param>
         /// <returns> The same builder instance so that multiple calls can be chained. </returns>
         public static PropertyBuilder HasComputedColumnSql(
@@ -379,7 +359,7 @@ namespace Microsoft.EntityFrameworkCore
 
             if (stored != null)
             {
-                propertyBuilder.Metadata.SetComputedColumnIsStored(stored);
+                propertyBuilder.Metadata.SetIsStored(stored);
             }
 
             return propertyBuilder;
@@ -392,9 +372,9 @@ namespace Microsoft.EntityFrameworkCore
         /// <param name="propertyBuilder"> The builder for the property being configured. </param>
         /// <param name="sql"> The SQL expression that computes values for the column. </param>
         /// <param name="stored">
-        ///     If <c>true</c>, the computed value is calculated on row modification and stored in the database like a regular column.
-        ///     If <c>false</c>, the value is computed when the value is read, and does not occupy any actual storage.
-        ///     <c>null</c> selects the database provider default.
+        ///     If <see langword="true" />, the computed value is calculated on row modification and stored in the database like a regular column.
+        ///     If <see langword="false" />, the value is computed when the value is read, and does not occupy any actual storage.
+        ///     <see langword="null" /> selects the database provider default.
         /// </param>
         /// <returns> The same builder instance so that multiple calls can be chained. </returns>
         public static PropertyBuilder<TProperty> HasComputedColumnSql<TProperty>(
@@ -411,7 +391,7 @@ namespace Microsoft.EntityFrameworkCore
         /// <param name="fromDataAnnotation"> Indicates whether the configuration was specified using a data annotation. </param>
         /// <returns>
         ///     The same builder instance if the configuration was applied,
-        ///     <c>null</c> otherwise.
+        ///     <see langword="null" /> otherwise.
         /// </returns>
         public static IConventionPropertyBuilder HasComputedColumnSql(
             [NotNull] this IConventionPropertyBuilder propertyBuilder,
@@ -432,13 +412,13 @@ namespace Microsoft.EntityFrameworkCore
         /// </summary>
         /// <param name="propertyBuilder"> The builder for the property being configured. </param>
         /// <param name="stored">
-        ///     If <c>true</c>, the computed value is calculated on row modification and stored in the database like a regular column.
-        ///     If <c>false</c>, the value is computed when the value is read, and does not occupy any actual storage.
-        ///     <c>null</c> selects the database provider default.
+        ///     If <see langword="true" />, the computed value is calculated on row modification and stored in the database like a regular column.
+        ///     If <see langword="false" />, the value is computed when the value is read, and does not occupy any actual storage.
+        ///     <see langword="null" /> selects the database provider default.
         /// </param>
         /// <param name="fromDataAnnotation"> Indicates whether the configuration was specified using a data annotation. </param>
         /// <returns>
-        ///     The same builder instance if the configuration was applied, <c>null</c> otherwise.
+        ///     The same builder instance if the configuration was applied, <see langword="null" /> otherwise.
         /// </returns>
         public static IConventionPropertyBuilder IsStoredComputedColumn(
             [NotNull] this IConventionPropertyBuilder propertyBuilder,
@@ -450,7 +430,7 @@ namespace Microsoft.EntityFrameworkCore
                 return null;
             }
 
-            propertyBuilder.Metadata.SetComputedColumnIsStored(stored, fromDataAnnotation);
+            propertyBuilder.Metadata.SetIsStored(stored, fromDataAnnotation);
             return propertyBuilder;
         }
 
@@ -460,7 +440,7 @@ namespace Microsoft.EntityFrameworkCore
         /// <param name="propertyBuilder"> The builder for the property being configured. </param>
         /// <param name="sql"> The SQL expression that computes values for the column. </param>
         /// <param name="fromDataAnnotation"> Indicates whether the configuration was specified using a data annotation. </param>
-        /// <returns> <c>true</c> if the given computed value SQL expression can be set for the column. </returns>
+        /// <returns> <see langword="true" /> if the given computed value SQL expression can be set for the column. </returns>
         public static bool CanSetComputedColumnSql(
             [NotNull] this IConventionPropertyBuilder propertyBuilder,
             [CanBeNull] string sql,
@@ -475,18 +455,18 @@ namespace Microsoft.EntityFrameworkCore
         /// </summary>
         /// <param name="propertyBuilder"> The builder for the property being configured. </param>
         /// <param name="stored">
-        ///     If <c>true</c>, the computed value is calculated on row modification and stored in the database like a regular column.
-        ///     If <c>false</c>, the value is computed when the value is read, and does not occupy any actual storage.
-        ///     <c>null</c> selects the database provider default.
+        ///     If <see langword="true" />, the computed value is calculated on row modification and stored in the database like a regular column.
+        ///     If <see langword="false" />, the value is computed when the value is read, and does not occupy any actual storage.
+        ///     <see langword="null" /> selects the database provider default.
         /// </param>
         /// <param name="fromDataAnnotation"> Indicates whether the configuration was specified using a data annotation. </param>
-        /// <returns> <c>true</c> if the given computed column type can be set for the column. </returns>
+        /// <returns> <see langword="true" /> if the given computed column type can be set for the column. </returns>
         public static bool CanSetIsStoredComputedColumn(
             [NotNull] this IConventionPropertyBuilder propertyBuilder,
             bool? stored,
             bool fromDataAnnotation = false)
             => propertyBuilder.CanSetAnnotation(
-                RelationalAnnotationNames.ComputedColumnIsStored,
+                RelationalAnnotationNames.IsStored,
                 stored,
                 fromDataAnnotation);
 
@@ -543,7 +523,7 @@ namespace Microsoft.EntityFrameworkCore
         /// <param name="fromDataAnnotation"> Indicates whether the configuration was specified using a data annotation. </param>
         /// <returns>
         ///     The same builder instance if the configuration was applied,
-        ///     <c>null</c> otherwise.
+        ///     <see langword="null" /> otherwise.
         /// </returns>
         public static IConventionPropertyBuilder HasDefaultValue(
             [NotNull] this IConventionPropertyBuilder propertyBuilder,
@@ -565,7 +545,7 @@ namespace Microsoft.EntityFrameworkCore
         /// <param name="propertyBuilder"> The builder for the property being configured. </param>
         /// <param name="value"> The default value of the column. </param>
         /// <param name="fromDataAnnotation"> Indicates whether the configuration was specified using a data annotation. </param>
-        /// <returns> <c>true</c> if the given value can be set as default for the column. </returns>
+        /// <returns> <see langword="true" /> if the given value can be set as default for the column. </returns>
         public static bool CanSetDefaultValue(
             [NotNull] this IConventionPropertyBuilder propertyBuilder,
             [CanBeNull] object value,
@@ -612,7 +592,7 @@ namespace Microsoft.EntityFrameworkCore
         /// <param name="fromDataAnnotation"> Indicates whether the configuration was specified using a data annotation. </param>
         /// <returns>
         ///     The same builder instance if the configuration was applied,
-        ///     <c>null</c> otherwise.
+        ///     <see langword="null" /> otherwise.
         /// </returns>
         public static IConventionPropertyBuilder HasComment(
             [NotNull] this IConventionPropertyBuilder propertyBuilder,
@@ -634,7 +614,7 @@ namespace Microsoft.EntityFrameworkCore
         /// <param name="propertyBuilder"> The builder for the property being configured. </param>
         /// <param name="comment"> The comment for the column. </param>
         /// <param name="fromDataAnnotation"> Indicates whether the configuration was specified using a data annotation. </param>
-        /// <returns> <c>true</c> if the given value can be set as default for the column. </returns>
+        /// <returns> <see langword="true" /> if the given value can be set as default for the column. </returns>
         public static bool CanSetComment(
             [NotNull] this IConventionPropertyBuilder propertyBuilder,
             [CanBeNull] string comment,
@@ -681,7 +661,7 @@ namespace Microsoft.EntityFrameworkCore
         /// <param name="fromDataAnnotation"> Indicates whether the configuration was specified using a data annotation. </param>
         /// <returns>
         ///     The same builder instance if the configuration was applied,
-        ///     <c>null</c> otherwise.
+        ///     <see langword="null" /> otherwise.
         /// </returns>
         public static IConventionPropertyBuilder UseCollation(
             [NotNull] this IConventionPropertyBuilder propertyBuilder,
@@ -704,7 +684,7 @@ namespace Microsoft.EntityFrameworkCore
         /// <param name="propertyBuilder"> The builder for the property being configured. </param>
         /// <param name="collation"> The collation. </param>
         /// <param name="fromDataAnnotation"> Indicates whether the configuration was specified using a data annotation. </param>
-        /// <returns> <c>true</c> if the given value can be set as default for the column. </returns>
+        /// <returns> <see langword="true" /> if the given value can be set as default for the column. </returns>
         public static bool CanSetCollation(
             [NotNull] this IConventionPropertyBuilder propertyBuilder,
             [CanBeNull] string collation,

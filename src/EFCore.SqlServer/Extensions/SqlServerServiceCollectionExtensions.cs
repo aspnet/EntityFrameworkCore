@@ -73,13 +73,13 @@ namespace Microsoft.Extensions.DependencyInjection
                 .TryAdd<IHistoryRepository, SqlServerHistoryRepository>()
                 .TryAdd<IExecutionStrategyFactory, SqlServerExecutionStrategyFactory>()
                 .TryAdd<IRelationalQueryStringFactory, SqlServerQueryStringFactory>()
-
-                // New Query Pipeline
+                .TryAdd<ICompiledQueryCacheKeyGenerator, SqlServerCompiledQueryCacheKeyGenerator>()
+                .TryAdd<IQueryCompilationContextFactory, SqlServerQueryCompilationContextFactory>()
                 .TryAdd<IMethodCallTranslatorProvider, SqlServerMethodCallTranslatorProvider>()
                 .TryAdd<IMemberTranslatorProvider, SqlServerMemberTranslatorProvider>()
                 .TryAdd<IQuerySqlGeneratorFactory, SqlServerQuerySqlGeneratorFactory>()
                 .TryAdd<IRelationalSqlTranslatingExpressionVisitorFactory, SqlServerSqlTranslatingExpressionVisitorFactory>()
-                .TryAdd<IRelationalParameterBasedQueryTranslationPostprocessorFactory, SqlServerParameterBasedQueryTranslationPostprocessorFactory>()
+                .TryAdd<IRelationalParameterBasedSqlProcessorFactory, SqlServerParameterBasedSqlProcessorFactory>()
                 .TryAddProviderSpecificServices(
                     b => b
                         .TryAddSingleton<ISqlServerValueGeneratorCache, SqlServerValueGeneratorCache>()

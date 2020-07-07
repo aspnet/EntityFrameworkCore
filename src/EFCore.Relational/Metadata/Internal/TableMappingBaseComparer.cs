@@ -36,7 +36,25 @@ namespace Microsoft.EntityFrameworkCore.Metadata.Internal
         /// </summary>
         public int Compare(ITableMappingBase x, ITableMappingBase y)
         {
-            var result = EntityTypeFullNameComparer.Instance.Compare(x.EntityType, y.EntityType);
+            var result = y.IsSharedTablePrincipal.CompareTo(x.IsSharedTablePrincipal);
+            if (result != 0)
+            {
+                return result;
+            }
+
+            result = y.IncludesDerivedTypes.CompareTo(x.IncludesDerivedTypes);
+            if (result != 0)
+            {
+                return result;
+            }
+
+            result = y.IsSplitEntityTypePrincipal.CompareTo(x.IsSplitEntityTypePrincipal);
+            if (result != 0)
+            {
+                return result;
+            }
+
+            result = EntityTypeFullNameComparer.Instance.Compare(x.EntityType, y.EntityType);
             if (result != 0)
             {
                 return result;
@@ -49,12 +67,6 @@ namespace Microsoft.EntityFrameworkCore.Metadata.Internal
             }
 
             result = StringComparer.Ordinal.Compare(x.Table.Schema, y.Table.Schema);
-            if (result != 0)
-            {
-                return result;
-            }
-
-            result = x.IncludesDerivedTypes.CompareTo(y.IncludesDerivedTypes);
             if (result != 0)
             {
                 return result;

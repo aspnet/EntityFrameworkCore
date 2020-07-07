@@ -41,6 +41,11 @@ namespace Microsoft.EntityFrameworkCore.Metadata
         MethodInfo MethodInfo { get; }
 
         /// <summary>
+        ///     Gets the value indicating whether the database function is built-in.
+        /// </summary>
+        bool IsBuiltIn { get; }
+
+        /// <summary>
         ///     Gets the value indicating whether this function returns scalar value.
         /// </summary>
         bool IsScalar { get; }
@@ -49,13 +54,6 @@ namespace Microsoft.EntityFrameworkCore.Metadata
         ///     Gets the value indicating whether this function is an aggregate function.
         /// </summary>
         bool IsAggregate { get; }
-
-        /// <summary>
-        ///     Gets the <see cref="IEntityType"/> returned by this table valued function.
-        /// </summary>
-        IEntityType ReturnEntityType => IsScalar
-            ? null
-            : Model.FindEntityType(ReturnType.GetGenericArguments()[0]);
 
         /// <summary>
         ///     Gets the configured store type string.
@@ -81,5 +79,10 @@ namespace Microsoft.EntityFrameworkCore.Metadata
         ///     Gets the translation callback for performing custom translation of the method call into a SQL expression fragment.
         /// </summary>
         Func<IReadOnlyCollection<SqlExpression>, SqlExpression> Translation { get; }
+
+        /// <summary>
+        ///     Gets the associated <see cref="IStoreFunction"/>.
+        /// </summary>
+        IStoreFunction StoreFunction { get; }
     }
 }
