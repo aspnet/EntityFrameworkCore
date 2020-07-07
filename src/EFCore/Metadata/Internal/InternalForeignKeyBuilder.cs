@@ -1081,53 +1081,6 @@ namespace Microsoft.EntityFrameworkCore.Metadata.Internal
         ///     any release. You should only use it directly in your code with extreme caution and knowing that
         ///     doing so can result in application failures when updating to a new Entity Framework Core release.
         /// </summary>
-        public virtual InternalForeignKeyBuilder IsEagerLoaded(
-            bool? eagerLoaded,
-            bool pointsToPrincipal,
-            ConfigurationSource configurationSource)
-        {
-            var navigation = pointsToPrincipal ? Metadata.DependentToPrincipal : Metadata.PrincipalToDependent;
-            if (navigation == null)
-            {
-                throw new InvalidOperationException(
-                    CoreStrings.NoNavigation(
-                        pointsToPrincipal ? Metadata.DeclaringEntityType.DisplayName() : Metadata.PrincipalEntityType.DisplayName(),
-                        Metadata.Properties.Format()));
-            }
-
-            if (CanSetIsEagerLoaded(eagerLoaded, pointsToPrincipal, configurationSource))
-            {
-                navigation.SetIsEagerLoaded(eagerLoaded, configurationSource);
-
-                return this;
-            }
-
-            return null;
-        }
-
-        /// <summary>
-        ///     This is an internal API that supports the Entity Framework Core infrastructure and not subject to
-        ///     the same compatibility standards as public APIs. It may be changed or removed without notice in
-        ///     any release. You should only use it directly in your code with extreme caution and knowing that
-        ///     doing so can result in application failures when updating to a new Entity Framework Core release.
-        /// </summary>
-        public virtual bool CanSetIsEagerLoaded(
-            bool? eagerLoaded,
-            bool pointsToPrincipal,
-            ConfigurationSource? configurationSource)
-        {
-            IConventionNavigation navigation = pointsToPrincipal ? Metadata.DependentToPrincipal : Metadata.PrincipalToDependent;
-            return navigation != null
-                && (configurationSource.Overrides(navigation.GetIsEagerLoadedConfigurationSource())
-                    || navigation.IsEagerLoaded == eagerLoaded);
-        }
-
-        /// <summary>
-        ///     This is an internal API that supports the Entity Framework Core infrastructure and not subject to
-        ///     the same compatibility standards as public APIs. It may be changed or removed without notice in
-        ///     any release. You should only use it directly in your code with extreme caution and knowing that
-        ///     doing so can result in application failures when updating to a new Entity Framework Core release.
-        /// </summary>
         public virtual InternalForeignKeyBuilder IsRequired(bool? required, ConfigurationSource configurationSource)
         {
             if (!CanSetIsRequired(required, configurationSource))
@@ -2887,10 +2840,10 @@ namespace Microsoft.EntityFrameworkCore.Metadata.Internal
 
             foreach (var relationshipWithResolution in resolvableRelationships)
             {
-                var resolvableRelationship = relationshipWithResolution.Item1;
-                var sameConfigurationSource = relationshipWithResolution.Item2;
-                var resolution = relationshipWithResolution.Item3;
-                var inverseNavigationRemoved = relationshipWithResolution.Item4;
+                var resolvableRelationship = relationshipWithResolution.Builder;
+                var sameConfigurationSource = relationshipWithResolution.SameConfigurationSource;
+                var resolution = relationshipWithResolution.Resolution;
+                var inverseNavigationRemoved = relationshipWithResolution.InverseNavigationShouldBeRemoved;
                 if (sameConfigurationSource
                     && configurationSource == ConfigurationSource.Explicit
                     && inverseNavigationRemoved)
@@ -3800,15 +3753,33 @@ namespace Microsoft.EntityFrameworkCore.Metadata.Internal
             }
 
             if (!someAspectsFitNonInverted
-                && canInvert
                 && shouldThrow)
             {
-                throw new InvalidOperationException(
-                    CoreStrings.EntityTypesNotInRelationship(
-                        dependentEntityType.DisplayName(),
-                        principalEntityType.DisplayName(),
-                        Metadata.DeclaringEntityType.DisplayName(),
-                        Metadata.PrincipalEntityType.DisplayName()));
+                if (strictPrincipal
+                    && principalEntityType.IsKeyless)
+                {
+                    throw new InvalidOperationException(
+                        CoreStrings.PrincipalKeylessType(
+                            principalEntityType.DisplayName(),
+                        Metadata.PrincipalEntityType.DisplayName()
+                                + (Metadata.PrincipalToDependent == null
+                                    ? ""
+                                    : "." + Metadata.PrincipalToDependent.Name),
+                        Metadata.DeclaringEntityType.DisplayName()
+                                + (Metadata.DependentToPrincipal == null
+                                    ? ""
+                                    : "." + Metadata.DependentToPrincipal.Name)));
+                }
+
+                if (canInvert)
+                {
+                    throw new InvalidOperationException(
+                        CoreStrings.EntityTypesNotInRelationship(
+                            dependentEntityType.DisplayName(),
+                            principalEntityType.DisplayName(),
+                            Metadata.DeclaringEntityType.DisplayName(),
+                            Metadata.PrincipalEntityType.DisplayName()));
+                }
             }
 
             return someAspectsFitNonInverted;
@@ -3844,6 +3815,23 @@ namespace Microsoft.EntityFrameworkCore.Metadata.Internal
                 && !principalEntityType.IsAssignableFrom(Metadata.PrincipalEntityType))
             {
                 return false;
+            }
+
+            if (inverted)
+            {
+                if (dependentEntityType.IsKeyless
+                    && !configurationSource.OverridesStrictly(dependentEntityType.GetIsKeylessConfigurationSource()))
+                {
+                    return false;
+                }
+            }
+            else
+            {
+                if (principalEntityType.IsKeyless
+                    && !configurationSource.OverridesStrictly(principalEntityType.GetIsKeylessConfigurationSource()))
+                {
+                    return false;
+                }
             }
 
             if (navigationToPrincipal != null)
@@ -4305,29 +4293,6 @@ namespace Microsoft.EntityFrameworkCore.Metadata.Internal
                 propertyAccessMode,
                 pointsToPrincipal,
                 fromDataAnnotation ? ConfigurationSource.DataAnnotation : ConfigurationSource.Convention);
-
-        /// <summary>
-        ///     This is an internal API that supports the Entity Framework Core infrastructure and not subject to
-        ///     the same compatibility standards as public APIs. It may be changed or removed without notice in
-        ///     any release. You should only use it directly in your code with extreme caution and knowing that
-        ///     doing so can result in application failures when updating to a new Entity Framework Core release.
-        /// </summary>
-        [DebuggerStepThrough]
-        IConventionForeignKeyBuilder IConventionForeignKeyBuilder.IsEagerLoaded(
-            bool? eagerLoaded, bool pointsToPrincipal, bool fromDataAnnotation)
-            => IsEagerLoaded(
-                eagerLoaded, pointsToPrincipal, fromDataAnnotation ? ConfigurationSource.DataAnnotation : ConfigurationSource.Convention);
-
-        /// <summary>
-        ///     This is an internal API that supports the Entity Framework Core infrastructure and not subject to
-        ///     the same compatibility standards as public APIs. It may be changed or removed without notice in
-        ///     any release. You should only use it directly in your code with extreme caution and knowing that
-        ///     doing so can result in application failures when updating to a new Entity Framework Core release.
-        /// </summary>
-        [DebuggerStepThrough]
-        bool IConventionForeignKeyBuilder.CanSetIsEagerLoaded(bool? eagerLoaded, bool pointsToPrincipal, bool fromDataAnnotation)
-            => CanSetIsEagerLoaded(
-                eagerLoaded, pointsToPrincipal, fromDataAnnotation ? ConfigurationSource.DataAnnotation : ConfigurationSource.Convention);
 
         /// <summary>
         ///     This is an internal API that supports the Entity Framework Core infrastructure and not subject to

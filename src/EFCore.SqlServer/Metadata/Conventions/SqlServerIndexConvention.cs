@@ -152,8 +152,7 @@ namespace Microsoft.EntityFrameworkCore.Metadata.Conventions
             var index = indexBuilder.Metadata;
             if (index.IsUnique
                 && index.IsClustered() != true
-                && index.Properties
-                    .Any(property => property.IsColumnNullable()))
+                && index.Properties.Any(property => property.IsColumnNullable()))
             {
                 if (columnNameChanged
                     || index.GetFilter() == null)
@@ -174,9 +173,16 @@ namespace Microsoft.EntityFrameworkCore.Metadata.Conventions
 
         private string CreateIndexFilter(IIndex index)
         {
+            var tableName = index.DeclaringEntityType.GetTableName();
+            if (tableName == null)
+            {
+                return null;
+            }
+
+            var table = StoreObjectIdentifier.Table(tableName, index.DeclaringEntityType.GetSchema());
             var nullableColumns = index.Properties
-                .Where(property => property.IsColumnNullable())
-                .Select(property => property.GetColumnName())
+                .Where(property => property.IsColumnNullable(table))
+                .Select(property => property.GetColumnName(table))
                 .ToList();
 
             var builder = new StringBuilder();

@@ -29,8 +29,35 @@ namespace Microsoft.EntityFrameworkCore
         /// <param name="property"> The property. </param>
         /// <returns> The name of the column to which the property is mapped. </returns>
         public static string GetColumnName([NotNull] this IProperty property)
-            => (string)property[RelationalAnnotationNames.ColumnName]
-                ?? GetDefaultColumnName(property);
+        {
+            var annotation = property.FindAnnotation(RelationalAnnotationNames.ColumnName);
+            return annotation != null ? (string)annotation.Value : property.GetDefaultColumnName();
+        }
+
+        /// <summary>
+        ///     Returns the name of the column to which the property is mapped for a particular table.
+        /// </summary>
+        /// <param name="property"> The property. </param>
+        /// <param name="storeObject"> The identifier of the table-like store object containing the column. </param>
+        /// <returns> The name of the column to which the property is mapped. </returns>
+        public static string GetColumnName([NotNull] this IProperty property, StoreObjectIdentifier storeObject)
+        {
+            Check.NotNull(property, nameof(property));
+
+            var overrides = RelationalPropertyOverrides.Find(property, storeObject);
+            if (overrides?.GetColumnNameConfigurationSource() != null)
+            {
+                return overrides.ColumnName;
+            }
+
+            var columnAnnotation = property.FindAnnotation(RelationalAnnotationNames.ColumnName);
+            if (columnAnnotation != null)
+            {
+                return (string)columnAnnotation.Value;
+            }
+
+            return GetDefaultColumnName(property, storeObject);
+        }
 
         /// <summary>
         ///     Returns the default column name to which the property would be mapped.
@@ -38,53 +65,90 @@ namespace Microsoft.EntityFrameworkCore
         /// <param name="property"> The property. </param>
         /// <returns> The default column name to which the property would be mapped. </returns>
         public static string GetDefaultColumnName([NotNull] this IProperty property)
+            => Uniquifier.Truncate(property.Name, property.DeclaringEntityType.Model.GetMaxIdentifierLength());
+
+        /// <summary>
+        ///     Returns the default column name to which the property would be mapped.
+        /// </summary>
+        /// <param name="property"> The property. </param>
+        /// <param name="storeObject"> The identifier of the table-like store object containing the column. </param>
+        /// <returns> The default column name to which the property would be mapped. </returns>
+        public static string GetDefaultColumnName([NotNull] this IProperty property, StoreObjectIdentifier storeObject)
         {
-            var sharedTablePrincipalPrimaryKeyProperty = property.FindSharedTableRootPrimaryKeyProperty();
+            var sharedTablePrincipalPrimaryKeyProperty = FindSharedObjectRootPrimaryKeyProperty(property, storeObject);
             if (sharedTablePrincipalPrimaryKeyProperty != null)
             {
-                return sharedTablePrincipalPrimaryKeyProperty.GetColumnName();
+                return sharedTablePrincipalPrimaryKeyProperty.GetColumnName(storeObject);
+            }
+
+            var sharedTablePrincipalConcurrencyProperty = FindSharedObjectRootConcurrencyTokenProperty(property, storeObject);
+            if (sharedTablePrincipalConcurrencyProperty != null)
+            {
+                return sharedTablePrincipalConcurrencyProperty.GetColumnName(storeObject);
             }
 
             var entityType = property.DeclaringEntityType;
             StringBuilder builder = null;
-            do
+            while (true)
             {
                 var ownership = entityType.GetForeignKeys().SingleOrDefault(fk => fk.IsOwnership);
                 if (ownership == null)
                 {
-                    entityType = null;
+                    break;
                 }
-                else
+
+                var name = storeObject.Name;
+                var schema = storeObject.Schema;
+                var ownerType = ownership.PrincipalEntityType;
+                switch (storeObject.StoreObjectType)
                 {
-                    var ownerType = ownership.PrincipalEntityType;
-                    var table = entityType.GetTableName();
-                    if (table != null
-                        && table == ownerType.GetTableName()
-                        && entityType.GetSchema() == ownerType.GetSchema())
-                    {
-                        if (builder == null)
+                    case StoreObjectType.Table:
+                        if (name != ownerType.GetTableName()
+                            || schema != ownerType.GetSchema())
                         {
-                            builder = new StringBuilder();
+                            entityType = null;
                         }
-
-                        builder.Insert(0, "_");
-                        builder.Insert(0, ownership.PrincipalToDependent.Name);
-                        entityType = ownerType;
-                    }
-                    else
-                    {
-                        entityType = null;
-                    }
+                        break;
+                    case StoreObjectType.View:
+                        if (name != ownerType.GetViewName()
+                            || schema != ownerType.GetViewSchema())
+                        {
+                            entityType = null;
+                        }
+                        break;
+                    case StoreObjectType.Function:
+                        if (name != ownerType.GetFunctionName())
+                        {
+                            entityType = null;
+                        }
+                        break;
+                    default:
+                        throw new NotImplementedException(storeObject.StoreObjectType.ToString());
                 }
-            }
-            while (entityType != null);
 
-            var baseName = property.Name;
-            if (builder != null)
-            {
-                builder.Append(baseName);
-                baseName = builder.ToString();
+                if (entityType == null)
+                {
+                    break;
+                }
+
+                if (builder == null)
+                {
+                    builder = new StringBuilder();
+                }
+
+                builder.Insert(0, "_");
+                builder.Insert(0, ownership.PrincipalToDependent.Name);
+                entityType = ownerType;
             }
+
+            var baseName = property.GetDefaultColumnName();
+            if (builder == null)
+            {
+                return baseName;
+            }
+
+            builder.Append(baseName);
+            baseName = builder.ToString();
 
             return Uniquifier.Truncate(baseName, property.DeclaringEntityType.Model.GetMaxIdentifierLength());
         }
@@ -118,6 +182,33 @@ namespace Microsoft.EntityFrameworkCore
         }
 
         /// <summary>
+        ///     Sets the column to which the property is mapped for a particular table-like store object.
+        /// </summary>
+        /// <param name="property"> The property. </param>
+        /// <param name="name"> The name to set. </param>
+        /// <param name="storeObject"> The identifier of the table-like store object containing the column. </param>
+        public static void SetColumnName(
+            [NotNull] this IMutableProperty property, [CanBeNull] string name, StoreObjectIdentifier storeObject)
+            => RelationalPropertyOverrides.GetOrCreate(property, storeObject)
+                .SetColumnName(name, ConfigurationSource.Explicit);
+
+        /// <summary>
+        ///     Sets the column to which the property is mapped for a particular table-like store object.
+        /// </summary>
+        /// <param name="property"> The property. </param>
+        /// <param name="name"> The name to set. </param>
+        /// <param name="storeObject"> The identifier of the table-like store object containing the column. </param>
+        /// <param name="fromDataAnnotation"> Indicates whether the configuration was specified using a data annotation. </param>
+        /// <returns> The configured value. </returns>
+        public static string SetColumnName(
+            [NotNull] this IConventionProperty property,
+            [CanBeNull] string name,
+            StoreObjectIdentifier storeObject,
+            bool fromDataAnnotation = false)
+            => RelationalPropertyOverrides.GetOrCreate(property, storeObject)
+                .SetColumnName(name, fromDataAnnotation ? ConfigurationSource.DataAnnotation : ConfigurationSource.Convention);
+
+        /// <summary>
         ///     Gets the <see cref="ConfigurationSource" /> for the column name.
         /// </summary>
         /// <param name="property"> The property. </param>
@@ -126,105 +217,15 @@ namespace Microsoft.EntityFrameworkCore
             => property.FindAnnotation(RelationalAnnotationNames.ColumnName)?.GetConfigurationSource();
 
         /// <summary>
-        ///     Returns the name of the view column to which the property is mapped.
+        ///     Gets the <see cref="ConfigurationSource" /> for the column name for a particular table-like store object.
         /// </summary>
         /// <param name="property"> The property. </param>
-        /// <returns> The name of the view column to which the property is mapped. </returns>
-        public static string GetViewColumnName([NotNull] this IProperty property)
-            => (string)property[RelationalAnnotationNames.ViewColumnName]
-                ?? GetDefaultViewColumnName(property);
-
-        /// <summary>
-        ///     Returns the default view column name to which the property would be mapped.
-        /// </summary>
-        /// <param name="property"> The property. </param>
-        /// <returns> The default view column name to which the property would be mapped. </returns>
-        public static string GetDefaultViewColumnName([NotNull] this IProperty property)
-        {
-            var sharedTablePrincipalPrimaryKeyProperty = property.FindSharedViewRootPrimaryKeyProperty();
-            if (sharedTablePrincipalPrimaryKeyProperty != null)
-            {
-                return sharedTablePrincipalPrimaryKeyProperty.GetViewColumnName();
-            }
-
-            var entityType = property.DeclaringEntityType;
-            StringBuilder builder = null;
-            do
-            {
-                var ownership = entityType.GetForeignKeys().SingleOrDefault(fk => fk.IsOwnership);
-                if (ownership == null)
-                {
-                    entityType = null;
-                }
-                else
-                {
-                    var ownerType = ownership.PrincipalEntityType;
-                    var viewName = entityType.GetViewName();
-                    if (viewName != null
-                        && viewName == ownerType.GetViewName()
-                        && entityType.GetViewSchema() == ownerType.GetViewSchema())
-                    {
-                        if (builder == null)
-                        {
-                            builder = new StringBuilder();
-                        }
-
-                        builder.Insert(0, "_");
-                        builder.Insert(0, ownership.PrincipalToDependent.Name);
-                        entityType = ownerType;
-                    }
-                    else
-                    {
-                        entityType = null;
-                    }
-                }
-            }
-            while (entityType != null);
-
-            if (builder == null)
-            {
-                return property.GetColumnName();
-            }
-
-            builder.Append(property.Name);
-            return Uniquifier.Truncate(builder.ToString(), property.DeclaringEntityType.Model.GetMaxIdentifierLength());
-        }
-
-        /// <summary>
-        ///     Sets the view column to which the property is mapped.
-        /// </summary>
-        /// <param name="property"> The property. </param>
-        /// <param name="name"> The name to set. </param>
-        public static void SetViewColumnName([NotNull] this IMutableProperty property, [CanBeNull] string name)
-            => property.SetOrRemoveAnnotation(
-                RelationalAnnotationNames.ViewColumnName,
-                Check.NullButNotEmpty(name, nameof(name)));
-
-        /// <summary>
-        ///     Sets the view column to which the property is mapped.
-        /// </summary>
-        /// <param name="property"> The property. </param>
-        /// <param name="name"> The name to set. </param>
-        /// <param name="fromDataAnnotation"> Indicates whether the configuration was specified using a data annotation. </param>
-        /// <returns> The configured value. </returns>
-        public static string SetViewColumnName(
-            [NotNull] this IConventionProperty property, [CanBeNull] string name, bool fromDataAnnotation = false)
-        {
-            property.SetOrRemoveAnnotation(
-                RelationalAnnotationNames.ViewColumnName,
-                Check.NullButNotEmpty(name, nameof(name)),
-                fromDataAnnotation);
-
-            return name;
-        }
-
-        /// <summary>
-        ///     Gets the <see cref="ConfigurationSource" /> for the view column name.
-        /// </summary>
-        /// <param name="property"> The property. </param>
-        /// <returns> The <see cref="ConfigurationSource" /> for the view column name. </returns>
-        public static ConfigurationSource? GetViewColumnNameConfigurationSource([NotNull] this IConventionProperty property)
-            => property.FindAnnotation(RelationalAnnotationNames.ViewColumnName)?.GetConfigurationSource();
+        /// <param name="storeObject"> The identifier of the table-like store object containing the column. </param>
+        /// <returns> The <see cref="ConfigurationSource" /> for the column name for a particular table-like store object. </returns>
+        public static ConfigurationSource? GetColumnNameConfigurationSource(
+            [NotNull] this IConventionProperty property,
+            StoreObjectIdentifier storeObject)
+            => RelationalPropertyOverrides.Find(property, storeObject)?.GetColumnNameConfigurationSource();
 
         /// <summary>
         ///     Returns the database type of the column to which the property is mapped.
@@ -233,21 +234,38 @@ namespace Microsoft.EntityFrameworkCore
         /// <returns> The database type of the column to which the property is mapped. </returns>
         public static string GetColumnType([NotNull] this IProperty property)
         {
-            var columnType = (string)property[RelationalAnnotationNames.ColumnType];
-            if (columnType != null)
+            var annotation = property.FindAnnotation(RelationalAnnotationNames.ColumnType);
+            if (annotation != null)
             {
-                return columnType;
+                return (string)annotation.Value;
             }
 
-            return GetDefaultColumnType(property);
+            return property.FindRelationalTypeMapping()?.StoreType;
         }
 
-        private static string GetDefaultColumnType(IProperty property)
+        /// <summary>
+        ///     Returns the database type of the column to which the property is mapped.
+        /// </summary>
+        /// <param name="property"> The property. </param>
+        /// <param name="storeObject"> The identifier of the table-like store object containing the column. </param>
+        /// <returns> The database type of the column to which the property is mapped. </returns>
+        public static string GetColumnType([NotNull] this IProperty property, StoreObjectIdentifier storeObject)
         {
-            var sharedTablePrincipalPrimaryKeyProperty = property.FindSharedRootPrimaryKeyProperty();
-            return sharedTablePrincipalPrimaryKeyProperty != null
-                ? sharedTablePrincipalPrimaryKeyProperty.GetColumnType()
-                : property.FindRelationalTypeMapping()?.StoreType;
+            var annotation = property.FindAnnotation(RelationalAnnotationNames.ColumnType);
+            if (annotation != null)
+            {
+                return (string)annotation.Value;
+            }
+
+            return GetDefaultColumnType(property, storeObject);
+        }
+
+        private static string GetDefaultColumnType(IProperty property, StoreObjectIdentifier storeObject)
+        {
+            var sharedTableRootProperty = property.FindSharedStoreObjectRootProperty(storeObject);
+            return sharedTableRootProperty != null
+                ? sharedTableRootProperty.GetColumnType(storeObject)
+                : property.FindRelationalTypeMapping(storeObject)?.StoreType;
         }
 
         /// <summary>
@@ -305,26 +323,40 @@ namespace Microsoft.EntityFrameworkCore
                 ?? Enumerable.Empty<IViewColumnMapping>();
 
         /// <summary>
-        ///     Returns the table column corresponding to this property if it's mapped to the given table.
+        ///     Returns the function columns to which the property is mapped.
         /// </summary>
         /// <param name="property"> The property. </param>
-        /// <param name="tableName"> The target table name. </param>
-        /// <param name="schema"> The target table schema. </param>
-        /// <returns> The table column to which the property is mapped. </returns>
-        public static IColumn FindTableColumn([NotNull] this IProperty property, [NotNull] string tableName, [CanBeNull] string schema)
-            => property.GetTableColumnMappings().Select(m => m.Column)
-                .FirstOrDefault(c => c.Table.Name == tableName && c.Table.Schema == schema);
+        /// <returns> The function columns to which the property is mapped. </returns>
+        public static IEnumerable<IFunctionColumnMapping> GetFunctionColumnMappings([NotNull] this IProperty property) =>
+            (IEnumerable<IFunctionColumnMapping>)property[RelationalAnnotationNames.FunctionColumnMappings]
+                ?? Enumerable.Empty<IFunctionColumnMapping>();
 
         /// <summary>
-        ///     Returns the view column corresponding to this property if it's mapped to the given table.
+        ///     Returns the column corresponding to this property if it's mapped to the given table-like store object.
         /// </summary>
         /// <param name="property"> The property. </param>
-        /// <param name="viewName"> The target table name. </param>
-        /// <param name="schema"> The target table schema. </param>
-        /// <returns> The table column to which the property is mapped. </returns>
-        public static IViewColumn FindViewColumn([NotNull] this IProperty property, [NotNull] string viewName, [CanBeNull] string schema)
-            => property.GetViewColumnMappings().Select(m => m.Column)
-                .FirstOrDefault(c => c.View.Name == viewName && c.View.Schema == schema);
+        /// <param name="storeObject"> The identifier of the table-like store object containing the column. </param>
+        /// <returns> The column to which the property is mapped. </returns>
+        public static IColumnBase FindColumn([NotNull] this IProperty property, StoreObjectIdentifier storeObject)
+        {
+            switch (storeObject.StoreObjectType)
+            {
+                case StoreObjectType.Table:
+                    return property.GetTableColumnMappings()
+                        .Where(m => m.TableMapping.Table.Name == storeObject.Name && m.TableMapping.Table.Schema == storeObject.Schema)
+                        .FirstOrDefault()?.Column;
+                case StoreObjectType.View:
+                    return property.GetViewColumnMappings()
+                        .Where(m => m.ViewMapping.Table.Name == storeObject.Name && m.ViewMapping.Table.Schema == storeObject.Schema)
+                        .FirstOrDefault()?.Column;
+                case StoreObjectType.Function:
+                    return property.GetFunctionColumnMappings()
+                        .Where(m => m.FunctionMapping.DbFunction.Name == storeObject.Name)
+                        .FirstOrDefault()?.Column;
+                default:
+                    throw new NotImplementedException(storeObject.StoreObjectType.ToString());
+            }
+        }
 
         /// <summary>
         ///     Returns the SQL expression that is used as the default value for the column this property is mapped to.
@@ -333,16 +365,28 @@ namespace Microsoft.EntityFrameworkCore
         /// <returns> The SQL expression that is used as the default value for the column this property is mapped to. </returns>
         public static string GetDefaultValueSql([NotNull] this IProperty property)
         {
-            var sql = (string)property[RelationalAnnotationNames.DefaultValueSql];
-            if (sql != null)
+            var annotation = property.FindAnnotation(RelationalAnnotationNames.DefaultValueSql);
+            return annotation != null ? (string)annotation.Value : null;
+        }
+
+        /// <summary>
+        ///     Returns the SQL expression that is used as the default value for the column this property is mapped to.
+        /// </summary>
+        /// <param name="property"> The property. </param>
+        /// <param name="storeObject"> The identifier of the table-like store object containing the column. </param>
+        /// <returns> The SQL expression that is used as the default value for the column this property is mapped to. </returns>
+        public static string GetDefaultValueSql([NotNull] this IProperty property, StoreObjectIdentifier storeObject)
+        {
+            var annotation = property.FindAnnotation(RelationalAnnotationNames.DefaultValueSql);
+            if (annotation != null)
             {
-                return sql;
+                return (string)annotation.Value;
             }
 
-            var sharedTablePrincipalPrimaryKeyProperty = property.FindSharedRootPrimaryKeyProperty();
-            if (sharedTablePrincipalPrimaryKeyProperty != null)
+            var sharedTableRootProperty = property.FindSharedStoreObjectRootProperty(storeObject);
+            if (sharedTableRootProperty != null)
             {
-                return GetDefaultValueSql(sharedTablePrincipalPrimaryKeyProperty);
+                return GetDefaultValueSql(sharedTableRootProperty, storeObject);
             }
 
             return null;
@@ -391,16 +435,33 @@ namespace Microsoft.EntityFrameworkCore
         /// <returns> The SQL expression that is used as the computed value for the column this property is mapped to. </returns>
         public static string GetComputedColumnSql([NotNull] this IProperty property)
         {
-            var sql = (string)property[RelationalAnnotationNames.ComputedColumnSql];
-            if (sql != null)
+            var annotation = property.FindAnnotation(RelationalAnnotationNames.ComputedColumnSql);
+            if (annotation != null)
             {
-                return sql;
+                return (string)annotation.Value;
             }
 
-            var sharedTablePrincipalPrimaryKeyProperty = property.FindSharedRootPrimaryKeyProperty();
-            if (sharedTablePrincipalPrimaryKeyProperty != null)
+            return null;
+        }
+
+        /// <summary>
+        ///     Returns the SQL expression that is used as the computed value for the column this property is mapped to.
+        /// </summary>
+        /// <param name="property"> The property. </param>
+        /// <param name="storeObject"> The identifier of the table-like store object containing the column. </param>
+        /// <returns> The SQL expression that is used as the computed value for the column this property is mapped to. </returns>
+        public static string GetComputedColumnSql([NotNull] this IProperty property, StoreObjectIdentifier storeObject)
+        {
+            var annotation = property.FindAnnotation(RelationalAnnotationNames.ComputedColumnSql);
+            if (annotation != null)
             {
-                return GetComputedColumnSql(sharedTablePrincipalPrimaryKeyProperty);
+                return (string)annotation.Value;
+            }
+
+            var sharedTableRootProperty = property.FindSharedStoreObjectRootProperty(storeObject);
+            if (sharedTableRootProperty != null)
+            {
+                return GetComputedColumnSql(sharedTableRootProperty, storeObject);
             }
 
             return null;
@@ -451,18 +512,34 @@ namespace Microsoft.EntityFrameworkCore
         ///     Whether the value of the computed column this property is mapped to is stored in the database,
         ///     or calculated when it is read.
         /// </returns>
-        public static bool? GetComputedColumnIsStored([NotNull] this IProperty property)
+        public static bool? GetIsStored([NotNull] this IProperty property)
         {
-            var computedColumnIsStored = (bool?)property[RelationalAnnotationNames.ComputedColumnIsStored];
-            if (computedColumnIsStored != null)
+            var annotation = property.FindAnnotation(RelationalAnnotationNames.IsStored);
+            return annotation != null ? (bool?)annotation.Value : null;
+        }
+
+        /// <summary>
+        ///     Gets whether the value of the computed column this property is mapped to is stored in the database, or calculated when
+        ///     it is read.
+        /// </summary>
+        /// <param name="property"> The property. </param>
+        /// <param name="storeObject"> The identifier of the table-like store object containing the column. </param>
+        /// <returns>
+        ///     Whether the value of the computed column this property is mapped to is stored in the database,
+        ///     or calculated when it is read.
+        /// </returns>
+        public static bool? GetIsStored([NotNull] this IProperty property, StoreObjectIdentifier storeObject)
+        {
+            var annotation = property.FindAnnotation(RelationalAnnotationNames.IsStored);
+            if (annotation != null)
             {
-                return computedColumnIsStored;
+                return (bool?)annotation.Value;
             }
 
-            var sharedTablePrincipalPrimaryKeyProperty = property.FindSharedRootPrimaryKeyProperty();
-            if (sharedTablePrincipalPrimaryKeyProperty != null)
+            var sharedTableRootProperty = property.FindSharedStoreObjectRootProperty(storeObject);
+            if (sharedTableRootProperty != null)
             {
-                return GetComputedColumnIsStored(sharedTablePrincipalPrimaryKeyProperty);
+                return GetIsStored(sharedTableRootProperty, storeObject);
             }
 
             return null;
@@ -474,9 +551,9 @@ namespace Microsoft.EntityFrameworkCore
         /// </summary>
         /// <param name="property"> The property. </param>
         /// <param name="value"> The value to set. </param>
-        public static void SetComputedColumnIsStored([NotNull] this IMutableProperty property, bool? value)
+        public static void SetIsStored([NotNull] this IMutableProperty property, bool? value)
             => property.SetOrRemoveAnnotation(
-                RelationalAnnotationNames.ComputedColumnIsStored,
+                RelationalAnnotationNames.IsStored,
                 value);
 
         /// <summary>
@@ -487,10 +564,10 @@ namespace Microsoft.EntityFrameworkCore
         /// <param name="value"> The value to set. </param>
         /// <param name="fromDataAnnotation"> Indicates whether the configuration was specified using a data annotation. </param>
         /// <returns> The configured value. </returns>
-        public static bool? SetComputedColumnIsStored(
+        public static bool? SetIsStored(
             [NotNull] this IConventionProperty property, bool? value, bool fromDataAnnotation = false)
         {
-            property.SetOrRemoveAnnotation(RelationalAnnotationNames.ComputedColumnIsStored, value, fromDataAnnotation);
+            property.SetOrRemoveAnnotation(RelationalAnnotationNames.IsStored, value, fromDataAnnotation);
 
             return value;
         }
@@ -500,8 +577,8 @@ namespace Microsoft.EntityFrameworkCore
         /// </summary>
         /// <param name="property"> The property. </param>
         /// <returns> The <see cref="ConfigurationSource" /> for the computed value SQL expression. </returns>
-        public static ConfigurationSource? GetComputedColumnIsStoredConfigurationSource([NotNull] this IConventionProperty property)
-            => property.FindAnnotation(RelationalAnnotationNames.ComputedColumnIsStored)?.GetConfigurationSource();
+        public static ConfigurationSource? GetIsStoredConfigurationSource([NotNull] this IConventionProperty property)
+            => property.FindAnnotation(RelationalAnnotationNames.IsStored)?.GetConfigurationSource();
 
         /// <summary>
         ///     Returns the object that is used as the default value for the column this property is mapped to.
@@ -510,16 +587,28 @@ namespace Microsoft.EntityFrameworkCore
         /// <returns> The object that is used as the default value for the column this property is mapped to. </returns>
         public static object GetDefaultValue([NotNull] this IProperty property)
         {
-            var value = property[RelationalAnnotationNames.DefaultValue];
-            if (value != null)
+            var annotation = property.FindAnnotation(RelationalAnnotationNames.DefaultValue);
+            return annotation != null ? annotation.Value : null;
+        }
+
+        /// <summary>
+        ///     Returns the object that is used as the default value for the column this property is mapped to.
+        /// </summary>
+        /// <param name="property"> The property. </param>
+        /// <param name="storeObject"> The identifier of the table-like store object containing the column. </param>
+        /// <returns> The object that is used as the default value for the column this property is mapped to. </returns>
+        public static object GetDefaultValue([NotNull] this IProperty property, StoreObjectIdentifier storeObject)
+        {
+            var annotation = property.FindAnnotation(RelationalAnnotationNames.DefaultValue);
+            if (annotation != null)
             {
-                return value;
+                return annotation.Value;
             }
 
-            var sharedTablePrincipalPrimaryKeyProperty = property.FindSharedRootPrimaryKeyProperty();
-            if (sharedTablePrincipalPrimaryKeyProperty != null)
+            var sharedTableRootProperty = property.FindSharedStoreObjectRootProperty(storeObject);
+            if (sharedTableRootProperty != null)
             {
-                return GetDefaultValue(sharedTablePrincipalPrimaryKeyProperty);
+                return GetDefaultValue(sharedTableRootProperty, storeObject);
             }
 
             return null;
@@ -589,7 +678,33 @@ namespace Microsoft.EntityFrameworkCore
         /// <param name="property"> The property. </param>
         /// <returns> A flag indicating if the property as capable of storing only fixed-length data, such as strings. </returns>
         public static bool? IsFixedLength([NotNull] this IProperty property)
-            => (bool?)property[RelationalAnnotationNames.IsFixedLength];
+        {
+            var annotation = property.FindAnnotation(RelationalAnnotationNames.IsFixedLength);
+            return annotation != null ? (bool?)annotation.Value : null;
+        }
+
+        /// <summary>
+        ///     Returns a flag indicating if the property as capable of storing only fixed-length data, such as strings.
+        /// </summary>
+        /// <param name="property"> The property. </param>
+        /// <param name="storeObject"> The identifier of the table-like store object containing the column. </param>
+        /// <returns> A flag indicating if the property as capable of storing only fixed-length data, such as strings. </returns>
+        public static bool? IsFixedLength([NotNull] this IProperty property, StoreObjectIdentifier storeObject)
+        {
+            var annotation = property.FindAnnotation(RelationalAnnotationNames.IsFixedLength);
+            if (annotation != null)
+            {
+                return (bool?)annotation.Value;
+            }
+
+            var sharedTableRootProperty = property.FindSharedStoreObjectRootProperty(storeObject);
+            if (sharedTableRootProperty != null)
+            {
+                return IsFixedLength(sharedTableRootProperty, storeObject);
+            }
+
+            return null;
+        }
 
         /// <summary>
         ///     Sets a flag indicating whether the property as capable of storing only fixed-length data, such as strings.
@@ -622,235 +737,53 @@ namespace Microsoft.EntityFrameworkCore
             => property.FindAnnotation(RelationalAnnotationNames.IsFixedLength)?.GetConfigurationSource();
 
         /// <summary>
-        ///     Returns the <see cref="RelationalTypeMapping" /> for the given property on a finalized model.
+        ///     <para>
+        ///         Checks whether the column mapped to the given <see cref="IProperty" /> will be nullable
+        ///         when created in the database.
+        ///     </para>
+        ///     <para>
+        ///         This depends on the property itself and also how it is mapped. For example,
+        ///         derived non-nullable properties in a TPH type hierarchy will be mapped to nullable columns.
+        ///         As well as properties on optional types sharing the same table.
+        ///     </para>
         /// </summary>
-        /// <param name="property"> The property. </param>
-        /// <returns> The type mapping. </returns>
-        [DebuggerStepThrough]
-        public static RelationalTypeMapping GetRelationalTypeMapping([NotNull] this IProperty property)
-            => (RelationalTypeMapping)property.GetTypeMapping();
-
-        /// <summary>
-        ///     Returns the <see cref="RelationalTypeMapping" /> for the given property on a finalized model.
-        /// </summary>
-        /// <param name="property"> The property. </param>
-        /// <returns> The type mapping, or null if none was found. </returns>
-        [DebuggerStepThrough]
-        [Obsolete("Use FindRelationalTypeMapping")]
-        public static RelationalTypeMapping FindRelationalMapping([NotNull] this IProperty property)
-            => property.FindRelationalTypeMapping();
-
-        /// <summary>
-        ///     Returns the <see cref="RelationalTypeMapping" /> for the given property on a finalized model.
-        /// </summary>
-        /// <param name="property"> The property. </param>
-        /// <returns> The type mapping, or null if none was found. </returns>
-        [DebuggerStepThrough]
-        public static RelationalTypeMapping FindRelationalTypeMapping([NotNull] this IProperty property)
-            => (RelationalTypeMapping)property.FindTypeMapping();
+        /// <param name="property"> The <see cref="IProperty" />. </param>
+        /// <returns> <see langword="true" /> if the mapped column is nullable; <see langword="false" /> otherwise. </returns>
+        public static bool IsColumnNullable([NotNull] this IProperty property)
+            => !property.IsPrimaryKey()
+                && (property.IsNullable
+                    || (property.DeclaringEntityType.BaseType != null && property.DeclaringEntityType.GetDiscriminatorProperty() != null));
 
         /// <summary>
         ///     <para>
         ///         Checks whether the column mapped to the given <see cref="IProperty" /> will be nullable
-        ///         or not when created in the database.
+        ///         when created in the database.
         ///     </para>
         ///     <para>
-        ///         This can depend not just on the property itself, but also how it is mapped. For example,
-        ///         non-nullable properties in a TPH type hierarchy will be mapped to nullable columns.
+        ///         This depends on the property itself and also how it is mapped. For example,
+        ///         derived non-nullable properties in a TPH type hierarchy will be mapped to nullable columns.
+        ///         As well as properties on optional types sharing the same table.
         ///     </para>
         /// </summary>
         /// <param name="property"> The <see cref="IProperty" />. </param>
-        /// <returns> <c>True</c> if the mapped column is nullable; <c>false</c> otherwise. </returns>
-        public static bool IsColumnNullable([NotNull] this IProperty property)
-            => !property.IsPrimaryKey()
-                && (property.DeclaringEntityType.BaseType != null
-                    || property.IsNullable
-                    || property.DeclaringEntityType.FindPrimaryKey()?.Properties[0].FindSharedObjectLink() != null);
-
-        /// <summary>
-        ///     <para>
-        ///         Checks whether or not the column mapped to the given <see cref="IProperty" /> will be nullable
-        ///         or not when created in the database.
-        ///     </para>
-        ///     <para>
-        ///         This can depend not just on the property itself, but also how it is mapped. For example,
-        ///         non-nullable properties in a TPH type hierarchy will be mapped to nullable columns.
-        ///     </para>
-        /// </summary>
-        /// <param name="property"> The <see cref="IProperty" />. </param>
-        /// <returns> <c>True</c> if the mapped column is nullable; <c>false</c> otherwise. </returns>
-        public static bool IsViewColumnNullable([NotNull] this IProperty property)
-            => !property.IsPrimaryKey()
-                && (property.DeclaringEntityType.BaseType != null
-                    || property.IsNullable
-                    || property.DeclaringEntityType.FindPrimaryKey()?.Properties[0].FindSharedObjectLink(StoreObjectType.View) != null);
-
-        /// <summary>
-        ///     <para>
-        ///         Finds the <see cref="IProperty" /> that is mapped to the same column as primary key property
-        ///         as the given property, but potentially in a shared table and is not in a shared table foreign key.
-        ///     </para>
-        ///     <para>
-        ///         This type is typically used by database providers (and other extensions). It is generally
-        ///         not used in application code.
-        ///     </para>
-        /// </summary>
-        /// <param name="property"> The property. </param>
-        /// <returns> The property found, or <code>null</code> if none was found.</returns>
-        public static IProperty FindSharedTableRootPrimaryKeyProperty([NotNull] this IProperty property)
-            => FindSharedObjectRootPrimaryKeyProperty(property, StoreObjectType.Table);
-
-        /// <summary>
-        ///     <para>
-        ///         Finds the <see cref="IProperty" /> that is mapped to the same column as primary key property
-        ///         as the given property, but potentially in a shared table and is not in a shared table foreign key.
-        ///     </para>
-        ///     <para>
-        ///         This type is typically used by database providers (and other extensions). It is generally
-        ///         not used in application code.
-        ///     </para>
-        /// </summary>
-        /// <param name="property"> The property. </param>
-        /// <returns> The property found, or <code>null</code> if none was found.</returns>
-        public static IMutableProperty FindSharedTableRootPrimaryKeyProperty([NotNull] this IMutableProperty property)
-            => (IMutableProperty)FindSharedObjectRootPrimaryKeyProperty(property, StoreObjectType.Table);
-
-        /// <summary>
-        ///     <para>
-        ///         Finds the <see cref="IProperty" /> that is mapped to the same column as primary key property
-        ///         as the given property, but potentially in a shared table and is not in a shared table foreign key.
-        ///     </para>
-        ///     <para>
-        ///         This type is typically used by database providers (and other extensions). It is generally
-        ///         not used in application code.
-        ///     </para>
-        /// </summary>
-        /// <param name="property"> The property. </param>
-        /// <returns> The property found, or <code>null</code> if none was found.</returns>
-        public static IConventionProperty FindSharedTableRootPrimaryKeyProperty([NotNull] this IConventionProperty property)
-            => (IConventionProperty)FindSharedObjectRootPrimaryKeyProperty(property, StoreObjectType.Table);
-
-        /// <summary>
-        ///     <para>
-        ///         Finds the <see cref="IProperty" /> that is mapped to the same database object as primary key property
-        ///         as the given property, but potentially in a shared object and is not in a shared object foreign key.
-        ///     </para>
-        ///     <para>
-        ///         This type is typically used by database providers (and other extensions). It is generally
-        ///         not used in application code.
-        ///     </para>
-        /// </summary>
-        /// <param name="property"> The property. </param>
-        /// <returns> The property found, or <code>null</code> if none was found.</returns>
-        public static IProperty FindSharedRootPrimaryKeyProperty([NotNull] this IProperty property)
-            => FindSharedObjectRootPrimaryKeyProperty(property, StoreObjectType.Table)
-            ?? FindSharedObjectRootPrimaryKeyProperty(property, StoreObjectType.View);
-
-        /// <summary>
-        ///     <para>
-        ///         Finds the <see cref="IProperty" /> that is mapped to the same database object as primary key property
-        ///         as the given property, but potentially in a shared object and is not in a shared object foreign key.
-        ///     </para>
-        ///     <para>
-        ///         This type is typically used by database providers (and other extensions). It is generally
-        ///         not used in application code.
-        ///     </para>
-        /// </summary>
-        /// <param name="property"> The property. </param>
-        /// <returns> The property found, or <code>null</code> if none was found.</returns>
-        public static IMutableProperty FindSharedRootPrimaryKeyProperty([NotNull] this IMutableProperty property)
-            => (IMutableProperty) (FindSharedObjectRootPrimaryKeyProperty(property, StoreObjectType.Table)
-            ?? FindSharedObjectRootPrimaryKeyProperty(property, StoreObjectType.View));
-
-        /// <summary>
-        ///     <para>
-        ///         Finds the <see cref="IProperty" /> that is mapped to the same database object as primary key property
-        ///         as the given property, but potentially in a shared object and is not in a shared object foreign key.
-        ///     </para>
-        ///     <para>
-        ///         This type is typically used by database providers (and other extensions). It is generally
-        ///         not used in application code.
-        ///     </para>
-        /// </summary>
-        /// <param name="property"> The property. </param>
-        /// <returns> The property found, or <code>null</code> if none was found.</returns>
-        public static IConventionProperty FindSharedRootPrimaryKeyProperty([NotNull] this IConventionProperty property)
-            => (IConventionProperty)(FindSharedObjectRootPrimaryKeyProperty(property, StoreObjectType.Table)
-            ?? FindSharedObjectRootPrimaryKeyProperty(property, StoreObjectType.View));
-
-        /// <summary>
-        ///     <para>
-        ///         Finds the <see cref="IProperty" /> that is mapped to the same column as primary key property
-        ///         as the given property, but potentially in a shared view and is not in a shared view foreign key.
-        ///     </para>
-        ///     <para>
-        ///         This type is typically used by database providers (and other extensions). It is generally
-        ///         not used in application code.
-        ///     </para>
-        /// </summary>
-        /// <param name="property"> The property. </param>
-        /// <returns> The property found, or <code>null</code> if none was found.</returns>
-        public static IProperty FindSharedViewRootPrimaryKeyProperty([NotNull] this IProperty property)
-            => FindSharedObjectRootPrimaryKeyProperty(property, StoreObjectType.View);
-
-        /// <summary>
-        ///     <para>
-        ///         Finds the <see cref="IProperty" /> that is mapped to the same column as primary key property
-        ///         as the given property, but potentially in a shared view and is not in a shared view foreign key.
-        ///     </para>
-        ///     <para>
-        ///         This type is typically used by database providers (and other extensions). It is generally
-        ///         not used in application code.
-        ///     </para>
-        /// </summary>
-        /// <param name="property"> The property. </param>
-        /// <returns> The property found, or <code>null</code> if none was found.</returns>
-        public static IMutableProperty FindSharedViewRootPrimaryKeyProperty([NotNull] this IMutableProperty property)
-            => (IMutableProperty)FindSharedObjectRootPrimaryKeyProperty(property, StoreObjectType.View);
-
-        /// <summary>
-        ///     <para>
-        ///         Finds the <see cref="IProperty" /> that is mapped to the same column as primary key property
-        ///         as the given property, but potentially in a shared view and is not in a shared view foreign key.
-        ///     </para>
-        ///     <para>
-        ///         This type is typically used by database providers (and other extensions). It is generally
-        ///         not used in application code.
-        ///     </para>
-        /// </summary>
-        /// <param name="property"> The property. </param>
-        /// <returns> The property found, or <code>null</code> if none was found.</returns>
-        public static IConventionProperty FindSharedViewRootPrimaryKeyProperty([NotNull] this IConventionProperty property)
-            => (IConventionProperty)FindSharedObjectRootPrimaryKeyProperty(property, StoreObjectType.View);
-
-        private static IProperty FindSharedObjectRootPrimaryKeyProperty([NotNull] IProperty property, StoreObjectType storeObjectType)
+        /// <param name="storeObject"> The identifier of the table-like store object containing the column. </param>
+        /// <returns> <see langword="true" /> if the mapped column is nullable; <see langword="false" /> otherwise. </returns>
+        public static bool IsColumnNullable([NotNull] this IProperty property, StoreObjectIdentifier storeObject)
         {
-            Check.NotNull(property, nameof(property));
-
-            var principalProperty = property;
-            HashSet<IEntityType> visitedTypes = null;
-            while (true)
+            if (property.IsPrimaryKey())
             {
-                var linkingRelationship = principalProperty.FindSharedObjectLink(storeObjectType);
-                if (linkingRelationship == null)
-                {
-                    break;
-                }
-
-                if (visitedTypes == null)
-                {
-                    visitedTypes = new HashSet<IEntityType> { linkingRelationship.DeclaringEntityType };
-                }
-
-                if (!visitedTypes.Add(linkingRelationship.PrincipalEntityType))
-                {
-                    return null;
-                }
-
-                principalProperty = linkingRelationship.PrincipalKey.Properties[linkingRelationship.Properties.IndexOf(principalProperty)];
+                return false;
             }
 
-            return principalProperty == property ? null : principalProperty;
+            var sharedTableRootProperty = property.FindSharedStoreObjectRootProperty(storeObject);
+            if (sharedTableRootProperty != null)
+            {
+                return sharedTableRootProperty.IsColumnNullable(storeObject);
+            }
+
+            return property.IsNullable
+                    || (property.DeclaringEntityType.BaseType != null && property.DeclaringEntityType.GetDiscriminatorProperty() != null)
+                    || property.DeclaringEntityType.FindRowInternalForeignKeys(storeObject).Any();
         }
 
         /// <summary>
@@ -860,16 +793,28 @@ namespace Microsoft.EntityFrameworkCore
         /// <returns> The comment for the column this property is mapped to. </returns>
         public static string GetComment([NotNull] this IProperty property)
         {
-            var value = (string)property[RelationalAnnotationNames.Comment];
-            if (value != null)
+            var annotation = property.FindAnnotation(RelationalAnnotationNames.Comment);
+            return annotation != null ? (string)annotation.Value : null;
+        }
+
+        /// <summary>
+        ///     Returns the comment for the column this property is mapped to.
+        /// </summary>
+        /// <param name="property"> The property. </param>
+        /// <param name="storeObject"> The identifier of the table-like store object containing the column. </param>
+        /// <returns> The comment for the column this property is mapped to. </returns>
+        public static string GetComment([NotNull] this IProperty property, StoreObjectIdentifier storeObject)
+        {
+            var annotation = property.FindAnnotation(RelationalAnnotationNames.Comment);
+            if (annotation != null)
             {
-                return value;
+                return (string)annotation.Value;
             }
 
-            var sharedTablePrincipalPrimaryKeyProperty = property.FindSharedRootPrimaryKeyProperty();
-            if (sharedTablePrincipalPrimaryKeyProperty != null)
+            var sharedTableRootProperty = property.FindSharedStoreObjectRootProperty(storeObject);
+            if (sharedTableRootProperty != null)
             {
-                return GetComment(sharedTablePrincipalPrimaryKeyProperty);
+                return GetComment(sharedTableRootProperty, storeObject);
             }
 
             return null;
@@ -914,16 +859,28 @@ namespace Microsoft.EntityFrameworkCore
         /// <returns> The collation for the column this property is mapped to. </returns>
         public static string GetCollation([NotNull] this IProperty property)
         {
-            var value = (string)property[RelationalAnnotationNames.Collation];
-            if (value != null)
+            var annotation = property.FindAnnotation(RelationalAnnotationNames.Collation);
+            return annotation != null ? (string)annotation.Value : null;
+        }
+
+        /// <summary>
+        ///     Returns the collation to be used for the column.
+        /// </summary>
+        /// <param name="property"> The property. </param>
+        /// <param name="storeObject"> The identifier of the table-like store object containing the column. </param>
+        /// <returns> The collation for the column this property is mapped to. </returns>
+        public static string GetCollation([NotNull] this IProperty property, StoreObjectIdentifier storeObject)
+        {
+            var annotation = property.FindAnnotation(RelationalAnnotationNames.Collation);
+            if (annotation != null)
             {
-                return value;
+                return (string)annotation.Value;
             }
 
-            var sharedTablePrincipalPrimaryKeyProperty = property.FindSharedRootPrimaryKeyProperty();
-            if (sharedTablePrincipalPrimaryKeyProperty != null)
+            var sharedTableRootProperty = property.FindSharedStoreObjectRootProperty(storeObject);
+            if (sharedTableRootProperty != null)
             {
-                return GetCollation(sharedTablePrincipalPrimaryKeyProperty);
+                return sharedTableRootProperty.GetCollation(storeObject);
             }
 
             return null;
@@ -960,5 +917,227 @@ namespace Microsoft.EntityFrameworkCore
         /// <returns> The <see cref="ConfigurationSource" /> for the column collation. </returns>
         public static ConfigurationSource? GetCollationConfigurationSource([NotNull] this IConventionProperty property)
             => property.FindAnnotation(RelationalAnnotationNames.Collation)?.GetConfigurationSource();
+
+        /// <summary>
+        ///     Returns the <see cref="RelationalTypeMapping" /> for the given property on a finalized model.
+        /// </summary>
+        /// <param name="property"> The property. </param>
+        /// <returns> The type mapping. </returns>
+        [DebuggerStepThrough]
+        public static RelationalTypeMapping GetRelationalTypeMapping([NotNull] this IProperty property)
+            => (RelationalTypeMapping)property.GetTypeMapping();
+
+        /// <summary>
+        ///     Returns the <see cref="RelationalTypeMapping" /> for the given property on a finalized model.
+        /// </summary>
+        /// <param name="property"> The property. </param>
+        /// <returns> The type mapping, or <see langword="null" /> if none was found. </returns>
+        [DebuggerStepThrough]
+        [Obsolete("Use FindRelationalTypeMapping")]
+        public static RelationalTypeMapping FindRelationalMapping([NotNull] this IProperty property)
+            => property.FindRelationalTypeMapping();
+
+        /// <summary>
+        ///     Returns the <see cref="RelationalTypeMapping" /> for the given property on a finalized model.
+        /// </summary>
+        /// <param name="property"> The property. </param>
+        /// <returns> The type mapping, or <see langword="null" /> if none was found. </returns>
+        [DebuggerStepThrough]
+        public static RelationalTypeMapping FindRelationalTypeMapping([NotNull] this IProperty property)
+            => (RelationalTypeMapping)property.FindTypeMapping();
+
+        /// <summary>
+        ///     Returns the <see cref="RelationalTypeMapping" /> for the given property on a finalized model.
+        /// </summary>
+        /// <param name="property"> The property. </param>
+        /// <param name="storeObject"> The identifier of the table-like store object containing the column. </param>
+        /// <returns> The type mapping, or <see langword="null" /> if none was found. </returns>
+        public static RelationalTypeMapping FindRelationalTypeMapping(
+            [NotNull] this IProperty property, StoreObjectIdentifier storeObject)
+            => property.FindRelationalTypeMapping();
+
+        /// <summary>
+        ///     <para>
+        ///         Finds the first <see cref="IProperty" /> that is mapped to the same column in a shared table-like object.
+        ///     </para>
+        ///     <para>
+        ///         This method is typically used by database providers (and other extensions). It is generally
+        ///         not used in application code.
+        ///     </para>
+        /// </summary>
+        /// <param name="property"> The property. </param>
+        /// <param name="storeObject"> The identifier of the table-like store object containing the column. </param>
+        /// <returns> The property found, or <see langword="null" /> if none was found.</returns>
+        public static IProperty FindSharedStoreObjectRootProperty(
+            [NotNull] this IProperty property, StoreObjectIdentifier storeObject)
+            => FindSharedObjectRootProperty(property, storeObject);
+
+        /// <summary>
+        ///     <para>
+        ///         Finds the first <see cref="IProperty" /> that is mapped to the same column in a shared table-like object.
+        ///     </para>
+        ///     <para>
+        ///         This method is typically used by database providers (and other extensions). It is generally
+        ///         not used in application code.
+        ///     </para>
+        /// </summary>
+        /// <param name="property"> The property. </param>
+        /// <param name="storeObject"> The identifier of the table-like store object containing the column. </param>
+        /// <returns> The property found, or <see langword="null" /> if none was found.</returns>
+        public static IMutableProperty FindSharedStoreObjectRootProperty(
+            [NotNull] this IMutableProperty property, StoreObjectIdentifier storeObject)
+            => (IMutableProperty)FindSharedObjectRootProperty(property, storeObject);
+
+        /// <summary>
+        ///     <para>
+        ///         Finds the first <see cref="IProperty" /> that is mapped to the same column in a shared table-like object.
+        ///     </para>
+        ///     <para>
+        ///         This method is typically used by database providers (and other extensions). It is generally
+        ///         not used in application code.
+        ///     </para>
+        /// </summary>
+        /// <param name="property"> The property. </param>
+        /// <param name="storeObject"> The identifier of the table-like store object containing the column. </param>
+        /// <returns> The property found, or <see langword="null" /> if none was found.</returns>
+        public static IConventionProperty FindSharedStoreObjectRootProperty(
+            [NotNull] this IConventionProperty property, StoreObjectIdentifier storeObject)
+            => (IConventionProperty)FindSharedObjectRootProperty(property, storeObject);
+
+        private static IProperty FindSharedObjectRootProperty([NotNull] IProperty property, StoreObjectIdentifier storeObject)
+        {
+            Check.NotNull(property, nameof(property));
+
+            var column = property.GetColumnName(storeObject);
+
+            if (column == null)
+            {
+                throw new InvalidOperationException(RelationalStrings.PropertyNotMappedToTable(
+                    property.Name, property.DeclaringEntityType, storeObject.DisplayName()));
+            }
+
+            var rootProperty = property;
+
+            // Limit traversal to avoid getting stuck in a cycle (validation will throw for these later)
+            // Using a hashset is detrimental to the perf when there are no cycles
+            for (var i = 0; i < Metadata.Internal.RelationalEntityTypeExtensions.MaxEntityTypesSharingTable; i++)
+            {
+                var linkedProperty = rootProperty.DeclaringEntityType
+                    .FindRowInternalForeignKeys(storeObject)
+                    .SelectMany(fk => fk.PrincipalEntityType.GetProperties())
+                    .FirstOrDefault(p => p.GetColumnName(storeObject) == column);
+                if (linkedProperty == null)
+                {
+                    break;
+                }
+
+                rootProperty = linkedProperty;
+            }
+
+            return rootProperty == property ? null : rootProperty;
+        }
+
+        private static IProperty FindSharedObjectRootPrimaryKeyProperty([NotNull] IProperty property, StoreObjectIdentifier storeObject)
+        {
+            if (!property.IsPrimaryKey())
+            {
+                return null;
+            }
+
+            var principalProperty = property;
+
+            // Limit traversal to avoid getting stuck in a cycle (validation will throw for these later)
+            // Using a hashset is detrimental to the perf when there are no cycles
+            for (var i = 0; i < Metadata.Internal.RelationalEntityTypeExtensions.MaxEntityTypesSharingTable; i++)
+            {
+                var linkingRelationship = principalProperty.DeclaringEntityType
+                    .FindRowInternalForeignKeys(storeObject).FirstOrDefault();
+                if (linkingRelationship == null)
+                {
+                    break;
+                }
+
+                principalProperty = linkingRelationship.PrincipalKey.Properties[linkingRelationship.Properties.IndexOf(principalProperty)];
+            }
+
+            return principalProperty == property ? null : principalProperty;
+        }
+
+        private static IProperty FindSharedObjectRootConcurrencyTokenProperty([NotNull] IProperty property, StoreObjectIdentifier storeObject)
+        {
+            if (!property.IsConcurrencyToken)
+            {
+                return null;
+            }
+
+            var principalProperty = property;
+            // Limit traversal to avoid getting stuck in a cycle (validation will throw for these later)
+            // Using a hashset is detrimental to the perf when there are no cycles
+            for (var i = 0; i < Metadata.Internal.RelationalEntityTypeExtensions.MaxEntityTypesSharingTable; i++)
+            {
+                var linkingRelationship = principalProperty.DeclaringEntityType
+                    .FindRowInternalForeignKeys(storeObject).FirstOrDefault();
+                if (linkingRelationship == null)
+                {
+                    break;
+                }
+
+                principalProperty = linkingRelationship.PrincipalEntityType.FindProperty(property.Name);
+                if (principalProperty == null
+                    || !principalProperty.IsConcurrencyToken)
+                {
+                    return null;
+                }
+            }
+
+            return principalProperty == property ? null : principalProperty;
+        }
+
+        /// <summary>
+        ///     <para>
+        ///         Returns the property facet overrides for a particular table-like store object.
+        ///     </para>
+        ///     <para>
+        ///         This method is typically used by database providers (and other extensions). It is generally
+        ///         not used in application code.
+        ///     </para>
+        /// </summary>
+        /// <param name="property"> The property. </param>
+        /// <param name="storeObject"> The identifier of the table-like store object containing the column. </param>
+        /// <returns> An object that stores property facet overrides. </returns>
+        public static IAnnotatable FindOverrides([NotNull] this IProperty property, StoreObjectIdentifier storeObject)
+            => RelationalPropertyOverrides.Find(property, storeObject);
+
+        /// <summary>
+        ///     <para>
+        ///         Returns the property facet overrides for a particular table-like store object.
+        ///     </para>
+        ///     <para>
+        ///         This method is typically used by database providers (and other extensions). It is generally
+        ///         not used in application code.
+        ///     </para>
+        /// </summary>
+        /// <param name="property"> The property. </param>
+        /// <param name="storeObject"> The identifier of the table-like store object containing the column. </param>
+        /// <returns> An object that stores property facet overrides. </returns>
+        public static IMutableAnnotatable GetOrCreateOverrides(
+            [NotNull] this IMutableProperty property, StoreObjectIdentifier storeObject)
+            => RelationalPropertyOverrides.GetOrCreate(property, storeObject);
+
+        /// <summary>
+        ///     <para>
+        ///         Returns the property facet overrides for a particular table-like store object.
+        ///     </para>
+        ///     <para>
+        ///         This method is typically used by database providers (and other extensions). It is generally
+        ///         not used in application code.
+        ///     </para>
+        /// </summary>
+        /// <param name="property"> The property. </param>
+        /// <param name="storeObject"> The identifier of the table-like store object containing the column. </param>
+        /// <returns> An object that stores property facet overrides. </returns>
+        public static IConventionAnnotatable GetOrCreateOverrides(
+            [NotNull] this IConventionProperty property, StoreObjectIdentifier storeObject)
+            => RelationalPropertyOverrides.GetOrCreate(property, storeObject);
     }
 }

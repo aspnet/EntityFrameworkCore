@@ -22,11 +22,6 @@ namespace Microsoft.EntityFrameworkCore.Metadata
         public const string ColumnName = Prefix + "ColumnName";
 
         /// <summary>
-        ///     The name for column name annotations.
-        /// </summary>
-        public const string ViewColumnName = Prefix + "ViewColumnName";
-
-        /// <summary>
         ///     The name for column type annotations.
         /// </summary>
         public const string ColumnType = Prefix + "ColumnType";
@@ -44,7 +39,7 @@ namespace Microsoft.EntityFrameworkCore.Metadata
         /// <summary>
         ///     The name for computed column type annotations.
         /// </summary>
-        public const string ComputedColumnIsStored = Prefix + "ComputedColumnIsStored";
+        public const string IsStored = Prefix + "IsStored";
 
         /// <summary>
         ///     The name for default value annotations.
@@ -70,6 +65,11 @@ namespace Microsoft.EntityFrameworkCore.Metadata
         ///     The name for view schema name annotations.
         /// </summary>
         public const string ViewSchema = Prefix + "ViewSchema";
+
+        /// <summary>
+        ///     The name for mapped function name annotations.
+        /// </summary>
+        public const string FunctionName = Prefix + "FunctionName";
 
         /// <summary>
         ///     The name for comment annotations.
@@ -136,7 +136,12 @@ namespace Microsoft.EntityFrameworkCore.Metadata
         /// <summary>
         ///     The name for the annotation containing the definition of a database view.
         /// </summary>
-        public const string ViewDefinition = Prefix + "ViewDefinition";
+        public const string ViewDefinitionSql = Prefix + "ViewDefinitionSql";
+
+        /// <summary>
+        ///     The name for the annotation determining whether the table is excluded from migrations.
+        /// </summary>
+        public const string IsTableExcludedFromMigrations = Prefix + "IsTableExcludedFromMigrations";
 
         /// <summary>
         ///     The name for database model annotation.
@@ -154,14 +159,24 @@ namespace Microsoft.EntityFrameworkCore.Metadata
         public const string TableColumnMappings = Prefix + "TableColumnMappings";
 
         /// <summary>
-        ///     The name for table mappings annotations.
+        ///     The name for view mappings annotations.
         /// </summary>
         public const string ViewMappings = Prefix + "ViewMappings";
 
         /// <summary>
-        ///     The name for column mappings annotations.
+        ///     The name for view column mappings annotations.
         /// </summary>
         public const string ViewColumnMappings = Prefix + "ViewColumnMappings";
+
+        /// <summary>
+        ///     The name for view mappings annotations.
+        /// </summary>
+        public const string FunctionMappings = Prefix + "FunctionMappings";
+
+        /// <summary>
+        ///     The name for view column mappings annotations.
+        /// </summary>
+        public const string FunctionColumnMappings = Prefix + "FunctionColumnMappings";
 
         /// <summary>
         ///     The name for foreign key mappings annotations.
@@ -177,5 +192,10 @@ namespace Microsoft.EntityFrameworkCore.Metadata
         ///     The name for unique constraint mappings annotations.
         /// </summary>
         public const string UniqueConstraintMappings = Prefix + "UniqueConstraintMappings";
+
+        /// <summary>
+        ///     The name for the annotation that contains table-specific facet overrides.
+        /// </summary>
+        public const string RelationalOverrides = Prefix + "RelationalOverrides";
     }
 }

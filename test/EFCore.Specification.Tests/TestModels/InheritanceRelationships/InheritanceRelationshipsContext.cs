@@ -8,8 +8,6 @@ namespace Microsoft.EntityFrameworkCore.TestModels.InheritanceRelationships
 {
     public class InheritanceRelationshipsContext : PoolableDbContext
     {
-        public static readonly string StoreName = "InheritanceRelationships";
-
         public InheritanceRelationshipsContext(DbContextOptions options)
             : base(options)
         {
@@ -266,7 +264,8 @@ namespace Microsoft.EntityFrameworkCore.TestModels.InheritanceRelationships
 
             var baseEntity3 = new BaseInheritanceRelationshipEntity
             {
-                Name = "Base3", BaseCollectionOnBase = new List<BaseCollectionOnBase> { dcob21 }
+                Name = "Base3",
+                BaseCollectionOnBase = new List<BaseCollectionOnBase> { dcob21 }
             };
 
             context.BaseEntities.AddRange(baseEntity1, baseEntity2, baseEntity3);

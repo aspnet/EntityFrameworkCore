@@ -1,8 +1,9 @@
-// Copyright (c) .NET Foundation. All rights reserved.
+﻿// Copyright (c) .NET Foundation. All rights reserved.
 // Licensed under the Apache License, Version 2.0. See License.txt in the project root for license information.
 
 using System;
 using System.Diagnostics;
+using System.Linq;
 using System.Linq.Expressions;
 using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.EntityFrameworkCore.Storage;
@@ -23,10 +24,13 @@ namespace Microsoft.EntityFrameworkCore.Query.SqlExpressions
     // Class is sealed because there are no public/protected constructors. Can be unsealed if this is changed.
     public sealed class ColumnExpression : SqlExpression
     {
-        internal ColumnExpression(IProperty property, TableExpressionBase table, bool nullable)
+        internal ColumnExpression(IProperty property, IColumnBase column, TableExpressionBase table, bool nullable)
             : this(
-                property.GetColumnName(), table, property.ClrType, property.GetRelationalTypeMapping(),
-                nullable || property.IsColumnNullable())
+                column?.Name ?? property.GetColumnName(),
+                table,
+                property.ClrType,
+                property.GetRelationalTypeMapping(),
+                nullable || (column?.IsNullable ?? property.IsColumnNullable()))
         {
         }
 
@@ -87,7 +91,7 @@ namespace Microsoft.EntityFrameworkCore.Query.SqlExpressions
             => new ColumnExpression(Name, Table, Type.MakeNullable(), TypeMapping, true);
 
         /// <inheritdoc />
-        public override void Print(ExpressionPrinter expressionPrinter)
+        protected override void Print(ExpressionPrinter expressionPrinter)
         {
             Check.NotNull(expressionPrinter, nameof(expressionPrinter));
 

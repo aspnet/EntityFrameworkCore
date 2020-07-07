@@ -666,7 +666,7 @@ namespace Microsoft.EntityFrameworkCore.Query.Internal
                     newEntityReference.MarkAsOptional();
                 }
 
-                newEntityReference.SetIncludePaths(entityReference.IncludePaths);
+                newEntityReference.IncludePaths.Merge(entityReference.IncludePaths);
 
                 // Prune includes for sibling types
                 var siblingNavigations = newEntityReference.IncludePaths.Keys
@@ -858,7 +858,7 @@ namespace Microsoft.EntityFrameworkCore.Query.Internal
                                     FormatFilter(lastIncludeTree.FilterExpression.Body).Print()));
                         }
 
-                        lastIncludeTree.FilterExpression = filterExpression;
+                        lastIncludeTree.ApplyFilter(filterExpression);
                     }
 
                     entityReference.SetLastInclude(lastIncludeTree);
@@ -1597,7 +1597,7 @@ namespace Microsoft.EntityFrameworkCore.Query.Internal
         private LambdaExpression ProcessLambdaExpression(NavigationExpansionExpression source, LambdaExpression lambdaExpression)
             => GenerateLambda(ExpandNavigationsForSource(source, RemapLambdaExpression(source, lambdaExpression)), source.CurrentParameter);
 
-        private static IEnumerable<INavigation> FindNavigations(IEntityType entityType, string navigationName)
+        private static IEnumerable<INavigationBase> FindNavigations(IEntityType entityType, string navigationName)
         {
             var navigation = entityType.FindNavigation(navigationName);
             if (navigation != null)
@@ -1610,6 +1610,20 @@ namespace Microsoft.EntityFrameworkCore.Query.Internal
                     .Select(et => et.FindDeclaredNavigation(navigationName)).Where(n => n != null))
                 {
                     yield return derivedNavigation;
+                }
+            }
+
+            var skipNavigation = entityType.FindSkipNavigation(navigationName);
+            if (skipNavigation != null)
+            {
+                yield return skipNavigation;
+            }
+            else
+            {
+                foreach (var derivedSkipNavigation in entityType.GetDerivedTypes()
+                    .Select(et => et.FindDeclaredSkipNavigation(navigationName)).Where(n => n != null))
+                {
+                    yield return derivedSkipNavigation;
                 }
             }
         }
@@ -1657,13 +1671,21 @@ namespace Microsoft.EntityFrameworkCore.Query.Internal
             return uniqueName;
         }
 
-        private static void PopulateEagerLoadedNavigations(IncludeTreeNode includeTreeNode)
+        private void PopulateEagerLoadedNavigations(IncludeTreeNode includeTreeNode)
         {
             var entityType = includeTreeNode.EntityType;
             var outboundNavigations
                 = entityType.GetNavigations()
+                    .Cast<INavigationBase>()
+                    .Concat(entityType.GetSkipNavigations())
                     .Concat(entityType.GetDerivedNavigations())
+                    .Concat(entityType.GetDerivedSkipNavigations())
                     .Where(n => n.IsEagerLoaded);
+
+            if (_queryCompilationContext.IgnoreEagerLoadedNavigations)
+            {
+                outboundNavigations = outboundNavigations.Where(n => n is INavigation navigation && navigation.ForeignKey.IsOwnership);
+            }
 
             foreach (var navigation in outboundNavigations)
             {
@@ -1704,6 +1726,17 @@ namespace Microsoft.EntityFrameworkCore.Query.Internal
                         return addedNode;
                     }
 
+                    var skipNavigation = entityType.FindSkipNavigation(memberExpression.Member);
+                    if (skipNavigation != null)
+                    {
+                        var addedNode = innerIncludeTreeNode.AddNavigation(skipNavigation);
+
+                        // This is to add eager Loaded navigations when owner type is included.
+                        PopulateEagerLoadedNavigations(addedNode);
+
+                        return addedNode;
+                    }
+
                     break;
             }
 
@@ -1717,7 +1750,7 @@ namespace Microsoft.EntityFrameworkCore.Query.Internal
             switch (selector)
             {
                 case EntityReference entityReference:
-                    return entityReference.Clone();
+                    return entityReference.Snapshot();
 
                 case NavigationTreeExpression navigationTreeExpression:
                     return SnapshotExpression(navigationTreeExpression.Value);
@@ -1738,7 +1771,7 @@ namespace Microsoft.EntityFrameworkCore.Query.Internal
                 }
 
                 case OwnedNavigationReference ownedNavigationReference:
-                    return ownedNavigationReference.EntityReference.Clone();
+                    return ownedNavigationReference.EntityReference.Snapshot();
 
                 default:
                     return Expression.Default(selector.Type);

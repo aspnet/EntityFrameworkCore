@@ -97,33 +97,37 @@ namespace Microsoft.EntityFrameworkCore.Metadata.Conventions
         }
 
         /// <inheritdoc/>
-        protected override void Validate(IConventionProperty property)
+        protected override void Validate(IConventionProperty property, StoreObjectIdentifier storeObject)
         {
-            if (property.GetValueGenerationStrategyConfigurationSource() != null
-                && property.GetValueGenerationStrategy() != SqlServerValueGenerationStrategy.None)
+            if (property.GetValueGenerationStrategyConfigurationSource() != null)
             {
-                var generationStrategy = property.GetValueGenerationStrategy();
+                var generationStrategy = property.GetValueGenerationStrategy(storeObject);
+                if (generationStrategy == SqlServerValueGenerationStrategy.None)
+                {
+                    base.Validate(property, storeObject);
+                    return;
+                }
 
-                if (property.GetDefaultValue() != null)
+                if (property.GetDefaultValue(storeObject) != null)
                 {
                     Dependencies.ValidationLogger.ConflictingValueGenerationStrategiesWarning(
                         generationStrategy, "DefaultValue", property);
                 }
 
-                if (property.GetDefaultValueSql() != null)
+                if (property.GetDefaultValueSql(storeObject) != null)
                 {
                     Dependencies.ValidationLogger.ConflictingValueGenerationStrategiesWarning(
                         generationStrategy, "DefaultValueSql", property);
                 }
 
-                if (property.GetComputedColumnSql() != null)
+                if (property.GetComputedColumnSql(storeObject) != null)
                 {
                     Dependencies.ValidationLogger.ConflictingValueGenerationStrategiesWarning(
                         generationStrategy, "ComputedColumnSql", property);
                 }
             }
 
-            base.Validate(property);
+            base.Validate(property, storeObject);
         }
     }
 }

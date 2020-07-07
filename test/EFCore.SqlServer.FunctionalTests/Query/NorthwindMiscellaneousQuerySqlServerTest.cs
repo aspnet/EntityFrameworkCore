@@ -1,4 +1,4 @@
-﻿// Copyright (c) .NET Foundation. All rights reserved.
+// Copyright (c) .NET Foundation. All rights reserved.
 // Licensed under the Apache License, Version 2.0. See License.txt in the project root for license information.
 
 using System;
@@ -13,7 +13,7 @@ using Xunit.Abstractions;
 // ReSharper disable InconsistentNaming
 namespace Microsoft.EntityFrameworkCore.Query
 {
-    public class NorthwindMiscellaneousQuerySqlServerTest : NorthwindMiscellaneousQueryTestBase<NorthwindQuerySqlServerFixture<NoopModelCustomizer>>
+    public class NorthwindMiscellaneousQuerySqlServerTest : NorthwindMiscellaneousQueryRelationalTestBase<NorthwindQuerySqlServerFixture<NoopModelCustomizer>>
     {
         public NorthwindMiscellaneousQuerySqlServerTest(NorthwindQuerySqlServerFixture<NoopModelCustomizer> fixture, ITestOutputHelper testOutputHelper)
             : base(fixture)
@@ -21,6 +21,8 @@ namespace Microsoft.EntityFrameworkCore.Query
             ClearLog();
             //Fixture.TestSqlLoggerFactory.SetTestOutputHelper(testOutputHelper);
         }
+
+        protected override bool CanExecuteQueryString => true;
 
         public override void Shaper_command_caching_when_parameter_names_different()
         {
@@ -2770,7 +2772,7 @@ WHERE [o].[OrderDate] > @__p_0");
 
 SELECT [c].[CustomerID], [c].[Address], [c].[City], [c].[CompanyName], [c].[ContactName], [c].[ContactTitle], [c].[Country], [c].[Fax], [c].[Phone], [c].[PostalCode], [c].[Region]
 FROM [Customers] AS [c]
-WHERE (@__NewLine_0 = N'') OR (CHARINDEX(@__NewLine_0, [c].[CustomerID]) > 0)");
+WHERE (@__NewLine_0 LIKE N'') OR (CHARINDEX(@__NewLine_0, [c].[CustomerID]) > 0)");
         }
 
         public override async Task Concat_string_int(bool async)
@@ -3148,7 +3150,7 @@ ORDER BY (
             AssertSql(
                 @"SELECT [o].[CustomerID]
 FROM [Orders] AS [o]
-WHERE [o].[OrderDate] IS NOT NULL AND (CHARINDEX(N'10', CONVERT(VARCHAR(10), [o].[EmployeeID])) > 0)");
+WHERE [o].[OrderDate] IS NOT NULL AND (CONVERT(VARCHAR(10), [o].[EmployeeID]) LIKE N'%10%')");
         }
 
         public override async Task Select_expression_long_to_string(bool async)
@@ -4050,7 +4052,7 @@ FROM (
             AssertSql(
                 @"@__p_0='10'
 
-SELECT SUM([t].[OrderID])
+SELECT COALESCE(SUM([t].[OrderID]), 0)
 FROM (
     SELECT TOP(@__p_0) [o].[OrderID]
     FROM [Orders] AS [o]
@@ -4177,7 +4179,7 @@ FROM (
             AssertSql(
                 @"@__p_0='10'
 
-SELECT SUM([t].[OrderID])
+SELECT COALESCE(SUM([t].[OrderID]), 0)
 FROM (
     SELECT [o].[OrderID]
     FROM [Orders] AS [o]
@@ -4251,7 +4253,7 @@ FROM (
             await base.Select_distinct_sum(async);
 
             AssertSql(
-                @"SELECT SUM([t].[OrderID])
+                @"SELECT COALESCE(SUM([t].[OrderID]), 0)
 FROM (
     SELECT DISTINCT [o].[OrderID]
     FROM [Orders] AS [o]
@@ -4449,13 +4451,13 @@ ORDER BY [c].[CustomerID] DESC");
             await base.Complex_nested_query_doesnt_try_binding_to_grandparent_when_parent_returns_complex_result(async);
 
             AssertSql(
-                @"SELECT [c].[CustomerID], [t].[c], [t].[CustomerID], [t].[OrderID]
+                @"SELECT [c].[CustomerID], [t].[InnerOrder], [t].[Id], [t].[OrderID]
 FROM [Customers] AS [c]
 OUTER APPLY (
     SELECT (
         SELECT COUNT(*)
         FROM [Orders] AS [o]
-        WHERE [c].[CustomerID] = [o].[CustomerID]) AS [c], [c].[CustomerID], [o0].[OrderID]
+        WHERE [c].[CustomerID] = [o].[CustomerID]) AS [InnerOrder], [c].[CustomerID] AS [Id], [o0].[OrderID]
     FROM [Orders] AS [o0]
     WHERE [c].[CustomerID] = [o0].[CustomerID]
 ) AS [t]
@@ -4729,15 +4731,18 @@ OFFSET @__p_0 ROWS FETCH NEXT @__p_1 ROWS ONLY");
             await base.AsQueryable_in_query_server_evals(async);
 
             AssertSql(
-                @"SELECT [c].[CustomerID], [t].[OrderDate], [t].[OrderID]
+                @"SELECT [c].[CustomerID], [t0].[OrderDate], [t0].[OrderID]
 FROM [Customers] AS [c]
-OUTER APPLY (
-    SELECT TOP(1) [o].[OrderDate], [o].[OrderID]
-    FROM [Orders] AS [o]
-    WHERE ([c].[CustomerID] = [o].[CustomerID]) AND (DATEPART(year, [o].[OrderDate]) = 1998)
-    ORDER BY [o].[OrderID]
-) AS [t]
-ORDER BY [c].[CustomerID], [t].[OrderID]");
+LEFT JOIN (
+    SELECT [t].[OrderDate], [t].[OrderID], [t].[CustomerID]
+    FROM (
+        SELECT [o].[OrderDate], [o].[OrderID], [o].[CustomerID], ROW_NUMBER() OVER(PARTITION BY [o].[CustomerID] ORDER BY [o].[OrderID]) AS [row]
+        FROM [Orders] AS [o]
+        WHERE DATEPART(year, [o].[OrderDate]) = 1998
+    ) AS [t]
+    WHERE [t].[row] <= 1
+) AS [t0] ON [c].[CustomerID] = [t0].[CustomerID]
+ORDER BY [c].[CustomerID], [t0].[CustomerID], [t0].[OrderID]");
         }
 
         public override async Task Subquery_DefaultIfEmpty_Any(bool async)
@@ -5055,6 +5060,107 @@ WHERE [c].[CustomerID] IN (N'ALFKI')");
                 @"SELECT [c].[CustomerID]
 FROM [Customers] AS [c]
 WHERE [c].[CustomerID] LIKE N'A%'");
+        }
+
+        public override async Task Projecting_collection_split(bool async)
+        {
+            await base.Projecting_collection_split(async);
+
+            AssertSql(
+                @"SELECT [c].[CustomerID]
+FROM [Customers] AS [c]
+WHERE [c].[CustomerID] LIKE N'F%'
+ORDER BY [c].[CustomerID]",
+                //
+                @"SELECT [o].[OrderID], [o].[CustomerID], [o].[EmployeeID], [o].[OrderDate], [c].[CustomerID]
+FROM [Customers] AS [c]
+INNER JOIN [Orders] AS [o] ON [c].[CustomerID] = [o].[CustomerID]
+WHERE [c].[CustomerID] LIKE N'F%'
+ORDER BY [c].[CustomerID]");
+        }
+
+        public override async Task Projecting_collection_then_include_split(bool async)
+        {
+            await base.Projecting_collection_then_include_split(async);
+
+            AssertSql(
+                @"SELECT [c].[CustomerID]
+FROM [Customers] AS [c]
+WHERE [c].[CustomerID] LIKE N'F%'
+ORDER BY [c].[CustomerID]",
+                //
+                @"SELECT [o].[OrderID], [o].[CustomerID], [o].[EmployeeID], [o].[OrderDate], [c].[CustomerID]
+FROM [Customers] AS [c]
+INNER JOIN [Orders] AS [o] ON [c].[CustomerID] = [o].[CustomerID]
+WHERE [c].[CustomerID] LIKE N'F%'
+ORDER BY [c].[CustomerID], [o].[OrderID]",
+                //
+                @"SELECT [o0].[OrderID], [o0].[ProductID], [o0].[Discount], [o0].[Quantity], [o0].[UnitPrice], [c].[CustomerID], [o].[OrderID]
+FROM [Customers] AS [c]
+INNER JOIN [Orders] AS [o] ON [c].[CustomerID] = [o].[CustomerID]
+INNER JOIN [Order Details] AS [o0] ON [o].[OrderID] = [o0].[OrderID]
+WHERE [c].[CustomerID] LIKE N'F%'
+ORDER BY [c].[CustomerID], [o].[OrderID]");
+        }
+
+        public override async Task Single_non_scalar_projection_after_skip_uses_join(bool async)
+        {
+            await base.Single_non_scalar_projection_after_skip_uses_join(async);
+
+            AssertSql(
+                @"SELECT [t0].[OrderID], [t0].[CustomerID], [t0].[EmployeeID], [t0].[OrderDate]
+FROM [Customers] AS [c]
+LEFT JOIN (
+    SELECT [t].[OrderID], [t].[CustomerID], [t].[EmployeeID], [t].[OrderDate]
+    FROM (
+        SELECT [o].[OrderID], [o].[CustomerID], [o].[EmployeeID], [o].[OrderDate], ROW_NUMBER() OVER(PARTITION BY [o].[CustomerID] ORDER BY [o].[OrderDate], [o].[OrderID]) AS [row]
+        FROM [Orders] AS [o]
+    ) AS [t]
+    WHERE (2 < [t].[row]) AND ([t].[row] <= 3)
+) AS [t0] ON [c].[CustomerID] = [t0].[CustomerID]");
+        }
+
+        public override async Task Select_distinct_Select_with_client_bindings(bool async)
+        {
+            await base.Select_distinct_Select_with_client_bindings(async);
+
+            AssertSql(
+                @"SELECT [t].[c]
+FROM (
+    SELECT DISTINCT DATEPART(year, [o].[OrderDate]) AS [c]
+    FROM [Orders] AS [o]
+    WHERE [o].[OrderID] < 10000
+) AS [t]");
+        }
+
+        public override async Task ToList_over_string(bool async)
+        {
+            await base.ToList_over_string(async);
+
+            AssertSql(
+                @"SELECT [c].[City]
+FROM [Customers] AS [c]
+ORDER BY [c].[CustomerID]");
+        }
+
+        public override async Task ToArray_over_string(bool async)
+        {
+            await base.ToArray_over_string(async);
+
+            AssertSql(
+                @"SELECT [c].[City]
+FROM [Customers] AS [c]
+ORDER BY [c].[CustomerID]");
+        }
+
+        public override async Task AsEnumerable_over_string(bool async)
+        {
+            await base.AsEnumerable_over_string(async);
+
+            AssertSql(
+                @"SELECT [c].[City]
+FROM [Customers] AS [c]
+ORDER BY [c].[CustomerID]");
         }
 
         private void AssertSql(params string[] expected)
