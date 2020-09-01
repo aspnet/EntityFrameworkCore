@@ -3312,7 +3312,7 @@ namespace Microsoft.EntityFrameworkCore.Query
                 async,
                 ss => from g1 in ss.Set<Gear>()
                       from g2 in ss.Set<Gear>()
-                      // ReSharper disable once PossibleUnintendedReferenceComparison
+                          // ReSharper disable once PossibleUnintendedReferenceComparison
                       where g1.Weapons == g2.Weapons
                       orderby g1.Nickname
                       select new { Nickname1 = g1.Nickname, Nickname2 = g2.Nickname },
