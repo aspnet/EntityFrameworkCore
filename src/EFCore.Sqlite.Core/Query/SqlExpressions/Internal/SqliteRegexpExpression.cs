@@ -1,16 +1,17 @@
-// Copyright (c) .NET Foundation. All rights reserved.
+﻿// Copyright (c) .NET Foundation. All rights reserved.
 // Licensed under the Apache License, Version 2.0. See License.txt in the project root for license information.
 
+using System;
 using System.Linq.Expressions;
 using JetBrains.Annotations;
 using Microsoft.EntityFrameworkCore.Query;
 using Microsoft.EntityFrameworkCore.Query.SqlExpressions;
-using Microsoft.EntityFrameworkCore.Sqlite.Query.SqlExpressions.Internal;
+using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.EntityFrameworkCore.Utilities;
 
 #nullable enable
 
-namespace Microsoft.EntityFrameworkCore.Sqlite.Query.Internal
+namespace Microsoft.EntityFrameworkCore.Sqlite.Query.SqlExpressions.Internal
 {
     /// <summary>
     ///     This is an internal API that supports the Entity Framework Core infrastructure and not subject to
@@ -18,7 +19,7 @@ namespace Microsoft.EntityFrameworkCore.Sqlite.Query.Internal
     ///     any release. You should only use it directly in your code with extreme caution and knowing that
     ///     doing so can result in application failures when updating to a new Entity Framework Core release.
     /// </summary>
-    public class SqliteQuerySqlGenerator : QuerySqlGenerator
+    public class SqliteRegexpExpression : SqlExpression
     {
         /// <summary>
         ///     This is an internal API that supports the Entity Framework Core infrastructure and not subject to
@@ -26,9 +27,17 @@ namespace Microsoft.EntityFrameworkCore.Sqlite.Query.Internal
         ///     any release. You should only use it directly in your code with extreme caution and knowing that
         ///     doing so can result in application failures when updating to a new Entity Framework Core release.
         /// </summary>
-        public SqliteQuerySqlGenerator([NotNull] QuerySqlGeneratorDependencies dependencies)
-            : base(dependencies)
+        public SqliteRegexpExpression(
+            [NotNull] SqlExpression match,
+            [NotNull] SqlExpression pattern,
+            [CanBeNull] RelationalTypeMapping? typeMapping)
+            : base(typeof(bool), typeMapping)
         {
+            Check.NotNull(match, nameof(match));
+            Check.NotNull(pattern, nameof(pattern));
+
+            Match = match;
+            Pattern = pattern;
         }
 
         /// <summary>
@@ -37,20 +46,30 @@ namespace Microsoft.EntityFrameworkCore.Sqlite.Query.Internal
         ///     any release. You should only use it directly in your code with extreme caution and knowing that
         ///     doing so can result in application failures when updating to a new Entity Framework Core release.
         /// </summary>
-        protected override Expression VisitExtension(Expression extensionExpression)
+        public virtual SqlExpression Match { get; }
+
+        /// <summary>
+        ///     This is an internal API that supports the Entity Framework Core infrastructure and not subject to
+        ///     the same compatibility standards as public APIs. It may be changed or removed without notice in
+        ///     any release. You should only use it directly in your code with extreme caution and knowing that
+        ///     doing so can result in application failures when updating to a new Entity Framework Core release.
+        /// </summary>
+        public virtual SqlExpression Pattern { get; }
+
+        /// <summary>
+        ///     This is an internal API that supports the Entity Framework Core infrastructure and not subject to
+        ///     the same compatibility standards as public APIs. It may be changed or removed without notice in
+        ///     any release. You should only use it directly in your code with extreme caution and knowing that
+        ///     doing so can result in application failures when updating to a new Entity Framework Core release.
+        /// </summary>
+        protected override Expression VisitChildren(ExpressionVisitor visitor)
         {
-            Check.NotNull(extensionExpression, nameof(extensionExpression));
+            Check.NotNull(visitor, nameof(visitor));
 
-            switch (extensionExpression)
-            {
-                case SqliteGlobExpression globExpression:
-                    return VisitGlob(globExpression);
+            var match = (SqlExpression)visitor.Visit(Match);
+            var pattern = (SqlExpression)visitor.Visit(Pattern);
 
-                case SqliteRegexpExpression regexpExpression:
-                    return VisitRegexp(regexpExpression);
-            }
-
-            return base.VisitExtension(extensionExpression);
+            return Update(match, pattern);
         }
 
         /// <summary>
@@ -59,15 +78,16 @@ namespace Microsoft.EntityFrameworkCore.Sqlite.Query.Internal
         ///     any release. You should only use it directly in your code with extreme caution and knowing that
         ///     doing so can result in application failures when updating to a new Entity Framework Core release.
         /// </summary>
-        protected virtual Expression VisitGlob([NotNull] SqliteGlobExpression globExpression)
+        public virtual SqliteRegexpExpression Update(
+           [NotNull] SqlExpression match,
+           [NotNull] SqlExpression pattern)
         {
-            Check.NotNull(globExpression, nameof(globExpression));
+            Check.NotNull(match, nameof(match));
+            Check.NotNull(pattern, nameof(pattern));
 
-            Visit(globExpression.Match);
-            Sql.Append(" GLOB ");
-            Visit(globExpression.Pattern);
-
-            return globExpression;
+            return match != Match || pattern != Pattern
+                ? new SqliteRegexpExpression(match, pattern, TypeMapping)
+                : this;
         }
 
         /// <summary>
@@ -76,15 +96,13 @@ namespace Microsoft.EntityFrameworkCore.Sqlite.Query.Internal
         ///     any release. You should only use it directly in your code with extreme caution and knowing that
         ///     doing so can result in application failures when updating to a new Entity Framework Core release.
         /// </summary>
-        protected virtual Expression VisitRegexp([NotNull] SqliteRegexpExpression regexpExpression)
+        protected override void Print(ExpressionPrinter expressionPrinter)
         {
-            Check.NotNull(regexpExpression, nameof(regexpExpression));
+            Check.NotNull(expressionPrinter, nameof(expressionPrinter));
 
-            Visit(regexpExpression.Match);
-            Sql.Append(" REGEXP ");
-            Visit(regexpExpression.Pattern);
-
-            return regexpExpression;
+            expressionPrinter.Visit(Match);
+            expressionPrinter.Append(" REGEXP ");
+            expressionPrinter.Visit(Pattern);
         }
 
         /// <summary>
@@ -93,44 +111,16 @@ namespace Microsoft.EntityFrameworkCore.Sqlite.Query.Internal
         ///     any release. You should only use it directly in your code with extreme caution and knowing that
         ///     doing so can result in application failures when updating to a new Entity Framework Core release.
         /// </summary>
-        protected override string GetOperator(SqlBinaryExpression binaryExpression)
-        {
-            Check.NotNull(binaryExpression, nameof(binaryExpression));
+        public override bool Equals(object? obj)
+            => obj != null
+                && (ReferenceEquals(this, obj)
+                    || obj is SqliteRegexpExpression regexpExpression
+                    && Equals(regexpExpression));
 
-            return binaryExpression.OperatorType == ExpressionType.Add
-                && binaryExpression.Type == typeof(string)
-                    ? " || "
-                    : base.GetOperator(binaryExpression);
-        }
-
-        /// <summary>
-        ///     This is an internal API that supports the Entity Framework Core infrastructure and not subject to
-        ///     the same compatibility standards as public APIs. It may be changed or removed without notice in
-        ///     any release. You should only use it directly in your code with extreme caution and knowing that
-        ///     doing so can result in application failures when updating to a new Entity Framework Core release.
-        /// </summary>
-        protected override void GenerateLimitOffset(SelectExpression selectExpression)
-        {
-            Check.NotNull(selectExpression, nameof(selectExpression));
-
-            if (selectExpression.Limit != null
-                || selectExpression.Offset != null)
-            {
-                Sql.AppendLine()
-                    .Append("LIMIT ");
-
-                Visit(
-                    selectExpression.Limit
-                    ?? new SqlConstantExpression(Expression.Constant(-1), selectExpression.Offset!.TypeMapping));
-
-                if (selectExpression.Offset != null)
-                {
-                    Sql.Append(" OFFSET ");
-
-                    Visit(selectExpression.Offset);
-                }
-            }
-        }
+        private bool Equals(SqliteRegexpExpression regexpExpression)
+            => base.Equals(regexpExpression)
+                && Match.Equals(regexpExpression.Match)
+                && Pattern.Equals(regexpExpression.Pattern);
 
         /// <summary>
         ///     This is an internal API that supports the Entity Framework Core infrastructure and not subject to
@@ -138,13 +128,7 @@ namespace Microsoft.EntityFrameworkCore.Sqlite.Query.Internal
         ///     any release. You should only use it directly in your code with extreme caution and knowing that
         ///     doing so can result in application failures when updating to a new Entity Framework Core release.
         /// </summary>
-        protected override void GenerateSetOperationOperand(SetOperationBase setOperation, SelectExpression operand)
-        {
-            Check.NotNull(setOperation, nameof(setOperation));
-            Check.NotNull(operand, nameof(operand));
-
-            // Sqlite doesn't support parentheses around set operation operands
-            Visit(operand);
-        }
+        public override int GetHashCode()
+            => HashCode.Combine(base.GetHashCode(), Match, Pattern);
     }
 }

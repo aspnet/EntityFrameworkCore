@@ -74,6 +74,7 @@ namespace Microsoft.Extensions.DependencyInjection
                 .TryAdd<IQueryableMethodTranslatingExpressionVisitorFactory, SqliteQueryableMethodTranslatingExpressionVisitorFactory>()
                 .TryAdd<IRelationalSqlTranslatingExpressionVisitorFactory, SqliteSqlTranslatingExpressionVisitorFactory>()
                 .TryAdd<IQueryTranslationPostprocessorFactory, SqliteQueryTranslationPostprocessorFactory>()
+                .TryAdd<IRelationalParameterBasedSqlProcessorFactory, SqliteParameterBasedSqlProcessorFactory>()
                 .TryAddProviderSpecificServices(
                     b => b.TryAddScoped<ISqliteRelationalConnection, SqliteRelationalConnection>());
 

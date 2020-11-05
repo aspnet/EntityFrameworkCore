@@ -34,7 +34,7 @@ namespace Microsoft.EntityFrameworkCore.Query
             AssertSql(
                 @"SELECT COUNT(*)
 FROM ""Customers"" AS ""c""
-WHERE glob('*M*', ""c"".""ContactName"")");
+WHERE ""c"".""ContactName"" GLOB '*M*'");
         }
 
         protected override string CaseInsensitiveCollation

@@ -26,17 +26,18 @@ namespace Microsoft.EntityFrameworkCore.Sqlite.Query.Internal
             : base(dependencies)
         {
             var sqlExpressionFactory = dependencies.SqlExpressionFactory;
+            var typeMappingSource = dependencies.RelationalTypeMappingSource;
 
             AddTranslators(
                 new IMethodCallTranslator[]
                 {
                     new SqliteByteArrayMethodTranslator(sqlExpressionFactory),
                     new SqliteDateTimeAddTranslator(sqlExpressionFactory),
-                    new SqliteGlobMethodTranslator(sqlExpressionFactory),
+                    new SqliteGlobMethodTranslator(sqlExpressionFactory, typeMappingSource),
                     new SqliteHexMethodTranslator(sqlExpressionFactory),
                     new SqliteMathTranslator(sqlExpressionFactory),
                     new SqliteObjectToStringTranslator(sqlExpressionFactory),
-                    new SqliteRegexMethodTranslator(sqlExpressionFactory),
+                    new SqliteRegexMethodTranslator(sqlExpressionFactory, typeMappingSource),
                     new SqliteStringMethodTranslator(sqlExpressionFactory),
                     new SqliteSubstrMethodTranslator(sqlExpressionFactory)
                 });
