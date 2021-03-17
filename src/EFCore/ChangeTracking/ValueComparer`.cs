@@ -9,6 +9,7 @@ using System.Linq.Expressions;
 using System.Reflection;
 using JetBrains.Annotations;
 using Microsoft.EntityFrameworkCore.Internal;
+using CA = System.Diagnostics.CodeAnalysis;
 
 namespace Microsoft.EntityFrameworkCore.ChangeTracking
 {
@@ -31,7 +32,7 @@ namespace Microsoft.EntityFrameworkCore.ChangeTracking
     {
         private Func<T?, T?, bool>? _equals;
         private Func<T, int>? _hashCode;
-        private Func<T?, T?>? _snapshot;
+        private Func<T, T>? _snapshot;
 
         /// <summary>
         ///     Creates a new <see cref="ValueComparer{T}" /> with a default comparison
@@ -80,7 +81,7 @@ namespace Microsoft.EntityFrameworkCore.ChangeTracking
         public ValueComparer(
             [NotNull] Expression<Func<T?, T?, bool>> equalsExpression,
             [NotNull] Expression<Func<T, int>> hashCodeExpression,
-            [NotNull] Expression<Func<T?, T?>> snapshotExpression)
+            [NotNull] Expression<Func<T, T>> snapshotExpression)
             : base(equalsExpression, hashCodeExpression, snapshotExpression)
         {
         }
@@ -159,7 +160,7 @@ namespace Microsoft.EntityFrameworkCore.ChangeTracking
         ///     Creates an expression for creating a snapshot of a value.
         /// </summary>
         /// <returns> The snapshot expression. </returns>
-        protected static Expression<Func<T?, T?>> CreateDefaultSnapshotExpression(bool favorStructuralComparisons)
+        protected static Expression<Func<T, T>> CreateDefaultSnapshotExpression(bool favorStructuralComparisons)
         {
             if (!favorStructuralComparisons
                 || !typeof(T).IsArray)
@@ -176,7 +177,7 @@ namespace Microsoft.EntityFrameworkCore.ChangeTracking
             // var destination = new T[length];
             // Array.Copy(source, destination, length);
             // return destination;
-            return Expression.Lambda<Func<T?, T?>>(
+            return Expression.Lambda<Func<T, T>>(
                 Expression.Block(
                     new[] { lengthVariable, destinationVariable },
                     Expression.Assign(
@@ -243,20 +244,21 @@ namespace Microsoft.EntityFrameworkCore.ChangeTracking
         /// <param name="right"> The second instance. </param>
         /// <returns> <see langword="true" /> if they are equal; <see langword="false" /> otherwise. </returns>
         public override bool Equals(object? left, object? right)
-        {
-            var v1Null = left == null;
-            var v2Null = right == null;
-
-            return v1Null || v2Null ? v1Null && v2Null : Equals((T?)left, (T?)right);
-        }
+            => (left, right) switch
+            {
+                (null, null) => true,
+                (null, _) => false,
+                (_, null) => false,
+                _ => Equals((T)left, (T)right)
+            };
 
         /// <summary>
         ///     Returns the hash code for the given instance.
         /// </summary>
         /// <param name="instance"> The instance. </param>
         /// <returns> The hash code. </returns>
-        public override int GetHashCode(object? instance)
-            => instance == null ? 0 : GetHashCode((T)instance);
+        public override int GetHashCode(object instance)
+            => GetHashCode((T)instance);
 
         /// <summary>
         ///     Compares the two instances to determine if they are equal.
@@ -291,7 +293,7 @@ namespace Microsoft.EntityFrameworkCore.ChangeTracking
         /// <param name="instance"> The instance. </param>
         /// <returns> The snapshot. </returns>
         public override object? Snapshot(object? instance)
-            => instance == null ? null : (object?)Snapshot((T?)instance);
+            => instance == null ? null : (object?)Snapshot((T)instance);
 
         /// <summary>
         ///     <para>
@@ -306,7 +308,7 @@ namespace Microsoft.EntityFrameworkCore.ChangeTracking
         /// </summary>
         /// <param name="instance"> The instance. </param>
         /// <returns> The snapshot. </returns>
-        public virtual T? Snapshot([CanBeNull] T? instance)
+        public virtual T Snapshot([NotNull] T instance)
             => NonCapturingLazyInitializer.EnsureInitialized(
                 ref _snapshot, this, static c => c.SnapshotExpression.Compile())(instance);
 
@@ -339,7 +341,7 @@ namespace Microsoft.EntityFrameworkCore.ChangeTracking
         ///         reference.
         ///     </para>
         /// </summary>
-        public new virtual Expression<Func<T?, T?>> SnapshotExpression
-            => (Expression<Func<T?, T?>>)base.SnapshotExpression;
+        public new virtual Expression<Func<T, T>> SnapshotExpression
+            => (Expression<Func<T, T>>)base.SnapshotExpression;
     }
 }

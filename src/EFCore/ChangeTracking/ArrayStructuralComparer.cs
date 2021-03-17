@@ -12,7 +12,7 @@ namespace Microsoft.EntityFrameworkCore.ChangeTracking
     ///     </para>
     /// </summary>
     /// <typeparam name="TElement"> The array element type. </typeparam>
-    public class ArrayStructuralComparer<TElement> : ValueComparer<TElement[]>
+    public class ArrayStructuralComparer<TElement> : ValueComparer<TElement[]?>
     {
         /// <summary>
         ///     Creates a comparer instance.

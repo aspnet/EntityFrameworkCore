@@ -9,6 +9,7 @@ using System.Reflection;
 using JetBrains.Annotations;
 using Microsoft.EntityFrameworkCore.Query;
 using Microsoft.EntityFrameworkCore.Utilities;
+using CA = System.Diagnostics.CodeAnalysis;
 
 namespace Microsoft.EntityFrameworkCore.ChangeTracking
 {
@@ -103,6 +104,7 @@ namespace Microsoft.EntityFrameworkCore.ChangeTracking
         /// </summary>
         /// <param name="instance"> The instance. </param>
         /// <returns> The snapshot. </returns>
+        [return: CA.NotNullIfNotNull("instance")]
         public abstract object? Snapshot([CanBeNull] object? instance);
 
         /// <summary>
@@ -238,7 +240,7 @@ namespace Microsoft.EntityFrameworkCore.ChangeTracking
             public override object? Snapshot(object? instance)
                 => instance;
 
-            public override T? Snapshot(T? instance)
+            public override T Snapshot(T instance)
                 => instance;
         }
 
