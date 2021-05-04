@@ -33,5 +33,6 @@
   </PropertyGroup>
   <PropertyGroup Label="Other dependencies">
     <MicrosoftCodeAnalysisVersion>3.7.0</MicrosoftCodeAnalysisVersion>
+    <MicrosoftCodeAnalysisCSharpCodeFixTestingXUnitVersion>1.0.1-beta1.20623.3</MicrosoftCodeAnalysisCSharpCodeFixTestingXUnitVersion>
   </PropertyGroup>
 </Project>
