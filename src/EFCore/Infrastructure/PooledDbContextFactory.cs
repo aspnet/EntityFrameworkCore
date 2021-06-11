@@ -1,6 +1,8 @@
 // Copyright (c) .NET Foundation. All rights reserved.
 // Licensed under the Apache License, Version 2.0. See License.txt in the project root for license information.
 
+using System.Threading;
+using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore.Internal;
 
 namespace Microsoft.EntityFrameworkCore.Infrastructure
@@ -49,6 +51,20 @@ namespace Microsoft.EntityFrameworkCore.Infrastructure
 
         /// <inheritdoc />
         public virtual TContext CreateDbContext()
-            => (TContext)new DbContextLease(_pool, standalone: true).Context;
+        {
+            var lease = new DbContextLease(_pool, standalone: true);
+            lease.Context.SetLease(lease);
+
+            return (TContext)lease.Context;
+        }
+
+        /// <inheritdoc />
+        public virtual async Task<TContext> CreateDbContextAsync(CancellationToken cancellationToken = default)
+        {
+            var lease = new DbContextLease(_pool, standalone: true);
+            await lease.Context.SetLeaseAsync(lease, cancellationToken);
+
+            return (TContext)lease.Context;
+        }
     }
 }
