@@ -882,6 +882,17 @@ namespace Microsoft.EntityFrameworkCore.Query
                 });
         }
 
+        [ConditionalTheory]
+        [MemberData(nameof(IsAsyncData))]
+        public virtual Task Filter_on_indexer_using_closure(bool async)
+        {
+            var zipCode = "ZipCode";
+
+            return AssertQuery(
+                async,
+                ss => ss.Set<OwnedPerson>().Where(p => (int)p.PersonAddress[zipCode] == 38654));
+        }
+
         protected virtual DbContext CreateContext()
             => Fixture.CreateContext();
 
