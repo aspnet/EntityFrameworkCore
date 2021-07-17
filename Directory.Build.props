@@ -24,7 +24,6 @@
     <LangVersion>9.0</LangVersion>
     <DebugType>portable</DebugType>
     <PackageProjectUrl>https://docs.microsoft.com/ef/core/</PackageProjectUrl>
-    <CodeAnalysisRuleSet>$(MSBuildThisFileDirectory)rulesets\EFCore.ruleset</CodeAnalysisRuleSet>
   </PropertyGroup>
 
   <PropertyGroup Condition="'$(DeveloperBuild)' == 'true'">
